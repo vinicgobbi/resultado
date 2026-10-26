@@ -27,19 +27,20 @@ class DownloadCandidatePhotos extends Command
      */
     public function handle(CandidatePhotos $photos): int
     {
-        $offices = collect($this->option('cargo'))->map(fn (string $value): ?Office => Office::tryFrom($value));
+        $offices = array_map(fn (?string $value): ?Office => $value === null ? null : Office::tryFrom($value), $this->option('cargo'));
 
-        if ($offices->contains(null)) {
+        if (in_array(null, $offices, true)) {
             $this->components->error('Cargo inválido. Use: '.collect(Office::cases())->pluck('value')->join(', ').'.');
 
             return self::FAILURE;
         }
 
+        $order = array_flip(array_map(fn (Office $office): string => $office->value, Office::cases()));
         $candidates = Candidate::query()
-            ->whereIn('office', $offices->isEmpty() ? Office::cases() : $offices->all())
+            ->whereIn('office', $offices === [] ? Office::cases() : $offices)
             ->get()
             // Majority offices first: they are the ones celebrated in big.
-            ->sortBy(fn (Candidate $candidate): int => array_search($candidate->office, Office::cases(), true))
+            ->sortBy(fn (Candidate $candidate): int => $order[$candidate->office->value])
             ->reject(fn (Candidate $candidate): bool => $photos->isStored($candidate) || $photos->isMissing($candidate))
             ->values();
 

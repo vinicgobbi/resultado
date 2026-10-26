@@ -47,7 +47,7 @@ class SyncElectionResults extends Command
             $started = microtime(true);
 
             try {
-                $totals = $synchronizer->sync($electionCode, $offices->all(), (bool) $this->option('completo'));
+                $totals = $synchronizer->sync($electionCode, array_values($offices->all()), (bool) $this->option('completo'));
             } catch (RateLimitedException $exception) {
                 $this->components->warn($exception->getMessage());
 

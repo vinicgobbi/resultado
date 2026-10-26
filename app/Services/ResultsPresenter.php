@@ -65,9 +65,9 @@ class ResultsPresenter
             ->values();
         $colors = $office->isProportional() ? [] : $this->colors->assign($ordered);
 
-        return $ordered
+        return array_values($ordered
             ->map(fn (Candidate $candidate): array => $candidate->toPublicArray($colors[$candidate->id] ?? null))
-            ->all();
+            ->all());
     }
 
     /**
@@ -237,13 +237,15 @@ class ResultsPresenter
         }
 
         $challengerVotes = array_values($votes)[$result->seats] ?? 0;
+        $winners = [];
 
-        return collect($votes)
-            ->take($result->seats)
-            ->filter(fn (int $count): bool => $count - $challengerVotes > $votersLeft)
-            ->map(fn (int $count, int $candidateId): array => ['candidate_id' => $candidateId, 'status' => $status])
-            ->values()
-            ->all();
+        foreach (array_slice($votes, 0, $result->seats, preserve_keys: true) as $candidateId => $count) {
+            if ($count - $challengerVotes > $votersLeft) {
+                $winners[] = ['candidate_id' => $candidateId, 'status' => $status];
+            }
+        }
+
+        return $winners;
     }
 
     /**

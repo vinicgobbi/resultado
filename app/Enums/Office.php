@@ -123,6 +123,6 @@ enum Office: string
     {
         return $this->isNationwide()
             ? State::cases()
-            : array_values(array_filter(State::cases(), fn (State $state): bool => $state !== State::Exterior));
+            : array_filter(State::cases(), fn (State $state): bool => $state !== State::Exterior);
     }
 }

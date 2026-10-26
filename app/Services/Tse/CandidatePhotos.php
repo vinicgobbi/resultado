@@ -47,14 +47,16 @@ class CandidatePhotos
                 continue;
             }
 
-            $pending[$candidate->id] = $candidate;
-            $urls[(string) $candidate->id] = $this->client->candidatePhotoUrl($electionCode, $directory, $candidate->tse_sequence);
+            // A prefix keeps the keys strings (numeric strings become ints).
+            $key = "candidato-{$candidate->id}";
+            $pending[$key] = $candidate;
+            $urls[$key] = $this->client->candidatePhotoUrl($electionCode, $directory, $candidate->tse_sequence);
         }
 
         $totals = ['downloaded' => 0, 'missing' => 0, 'failed' => 0];
 
-        foreach ($this->client->downloadMany($urls) as $id => $photo) {
-            $candidate = $pending[(int) $id];
+        foreach ($this->client->downloadMany($urls) as $key => $photo) {
+            $candidate = $pending[$key];
 
             if ($photo === false) {
                 $totals['failed']++;

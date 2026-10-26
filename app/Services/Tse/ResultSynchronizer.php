@@ -237,11 +237,15 @@ class ResultSynchronizer
             return 0;
         }
 
-        $states = collect($offices)
-            ->flatMap(fn (Office $office): array => $disputedStates[$office->value])
-            ->unique(fn (State $state): string => $state->value)
-            ->values()
-            ->all();
+        $states = [];
+
+        foreach ($offices as $office) {
+            foreach ($disputedStates[$office->value] as $state) {
+                if (! in_array($state, $states, true)) {
+                    $states[] = $state;
+                }
+            }
+        }
 
         [$progress, $reported] = $this->municipalityProgress($electionCode, $states);
 
