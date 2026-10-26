@@ -14,6 +14,7 @@ final readonly class ResultPayload
      */
     public function __construct(
         public array $candidates,
+        public int $seats,
         public int $sectionsTotal,
         public int $sectionsCounted,
         public float $countedPercent,
@@ -46,9 +47,10 @@ final readonly class ResultPayload
                             'full_name' => (string) $candidate['nm'],
                             'party' => (string) ($party['sg'] ?? ''),
                             'votes' => (int) ($candidate['vap'] ?? 0),
-                            // "e" is also "s" for who goes to the runoff;
-                            // "st" is "Eleito" only for the winner.
-                            'elected' => ($candidate['st'] ?? '') === 'Eleito',
+                            // "e" is also "s" for who goes to the runoff; "st"
+                            // is "Eleito", "Eleito por QP" or "Eleito por média"
+                            // only for the winners.
+                            'elected' => str_starts_with((string) ($candidate['st'] ?? ''), 'Eleito'),
                         ];
                     }
                 }
@@ -61,6 +63,7 @@ final readonly class ResultPayload
 
         return new self(
             candidates: $candidates,
+            seats: max(1, (int) ($json['carg'][0]['nv'] ?? 1)),
             sectionsTotal: (int) ($sections['ts'] ?? 0),
             sectionsCounted: (int) ($sections['st'] ?? 0),
             countedPercent: self::decimal($sections['pstn'] ?? $sections['pst'] ?? '0'),

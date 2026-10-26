@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Models\Result;
 use App\Services\Tse\ResultSynchronizer;
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
@@ -14,22 +16,15 @@ use Illuminate\Support\Facades\Cache;
  * Shapes stored results into the props consumed by the public pages.
  *
  * @phpstan-type CandidateVotes array{candidate_id: int, votes: int, percent: float}
- * @phpstan-type FormattedResult array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
- * @phpstan-type StateResult array{code: string, name: string, counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
+ * @phpstan-type FormattedResult array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, seats: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
+ * @phpstan-type StateResult array{code: string, name: string, counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, seats: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
+ * @phpstan-type Place array{code: string, name: string, counted_percent: float, is_final: bool}
  * @phpstan-type MapEntry array{0: int|null, 1: float, 2: float}
  * @phpstan-type Winner array{candidate_id: int, status: 'elected'|'mathematical'}
- * @phpstan-type CountrySummary array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>, winner: Winner|null}
+ * @phpstan-type Summary array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, seats: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>, winners: list<Winner>}
  */
 class ResultsPresenter
 {
-    /**
-     * Election code configured for a round, falling back to the active round.
-     */
-    public static function electionCode(int $round): int
-    {
-        return (int) config("eleicoes.turnos.{$round}");
-    }
-
     /**
      * @return list<int>
      */
@@ -39,41 +34,113 @@ class ResultsPresenter
     }
 
     /**
-     * Candidates that appear in the results of an election.
+     * Candidates that appear in a result.
      *
+     * @param  array{results: list<CandidateVotes>}|null  $result
      * @return Collection<int, Candidate>
      */
-    public function candidates(int $electionCode): Collection
+    public function candidates(?array $result): Collection
     {
-        $ids = collect($this->data($electionCode)['country']['results'] ?? [])->pluck('candidate_id');
+        $ids = array_column($result['results'] ?? [], 'candidate_id');
 
         return Candidate::query()->whereKey($ids)->get()->keyBy('id');
     }
 
     /**
-     * @return CountrySummary|null
+     * Result of the place where the office is elected: the whole country for
+     * president, the state for every other office.
+     *
+     * @return Summary|null
      */
-    public function summary(int $electionCode): ?array
+    public function summary(int $electionCode, Office $office, ?State $state = null): ?array
     {
-        return $this->data($electionCode)['country'];
+        $scope = $office->isNationwide() ? Result::SCOPE_COUNTRY : Result::SCOPE_STATE;
+        $scopeCode = $office->isNationwide() ? 'br' : $state?->value;
+
+        if ($scopeCode === null) {
+            return null;
+        }
+
+        return $this->remember($electionCode, "{$office->value}.resumo.{$scopeCode}", function () use ($electionCode, $office, $scope, $scopeCode): ?array {
+            $result = Result::query()->forElection($electionCode, $office, $scope)->where('scope_code', $scopeCode)->first();
+
+            return $result === null ? null : [...$this->format($result), 'winners' => $this->winners($result, $office)];
+        });
     }
 
     /**
+     * Result of the office in every state.
+     *
      * @return list<StateResult>
      */
-    public function states(int $electionCode): array
+    public function states(int $electionCode, Office $office): array
     {
-        return $this->data($electionCode)['states'];
+        return $this->remember($electionCode, "{$office->value}.estados", fn (): array => array_values(Result::query()
+            ->forElection($electionCode, $office, Result::SCOPE_STATE)
+            ->get()
+            ->map(function (Result $result): array {
+                $state = State::from($result->scope_code);
+
+                return [
+                    'code' => $state->abbreviation(),
+                    'name' => $state->label(),
+                    ...$this->format($result),
+                ];
+            })
+            ->sortBy(fn (array $state): string => $state['code'] === 'ZZ' ? 'ZZZ' : $state['name'])
+            ->all()));
     }
 
     /**
-     * Compact map data keyed by IBGE code: [leader id, leader %, counted %].
+     * States with results of the office, without the votes (deputy results
+     * list every candidate of the state).
+     *
+     * @return list<Place>
+     */
+    public function places(int $electionCode, Office $office): array
+    {
+        return $this->remember($electionCode, "{$office->value}.locais", fn (): array => array_values(Result::query()
+            ->forElection($electionCode, $office, Result::SCOPE_STATE)
+            ->get(['scope_code', 'counted_percent', 'is_final'])
+            ->map(function (Result $result): array {
+                $state = State::from($result->scope_code);
+
+                return [
+                    'code' => $state->abbreviation(),
+                    'name' => $state->label(),
+                    'counted_percent' => round($result->counted_percent, 2),
+                    'is_final' => $result->is_final,
+                ];
+            })
+            ->sortBy('name')
+            ->all()));
+    }
+
+    /**
+     * Compact map data keyed by IBGE code: [leader id, leader %, counted %],
+     * for the whole country or for one state.
      *
      * @return array<string, MapEntry>
      */
-    public function map(int $electionCode): array
+    public function map(int $electionCode, Office $office, ?State $state = null): array
     {
-        return $this->data($electionCode)['map'];
+        return $this->remember($electionCode, "{$office->value}.mapa.".($state->value ?? 'br'), fn (): array => Result::query()
+            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
+            ->join('municipalities', 'municipalities.tse_code', '=', 'results.scope_code')
+            ->whereNotNull('municipalities.ibge_code')
+            ->when($state !== null, fn ($query) => $query->where('municipalities.state', $state?->value))
+            ->get(['municipalities.ibge_code', 'results.votes', 'results.valid_votes', 'results.leading_candidate_id', 'results.counted_percent'])
+            ->mapWithKeys(function (Result $result): array {
+                $votes = $result->votes;
+                $leaderVotes = $result->leading_candidate_id === null ? 0 : ($votes[$result->leading_candidate_id] ?? 0);
+
+                return [(string) $result->getAttribute('ibge_code') => [
+                    $result->leading_candidate_id,
+                    $this->percent($leaderVotes, max($result->valid_votes, array_sum($votes))),
+                    round($result->counted_percent, 2),
+                ]];
+            })
+            ->all());
     }
 
     /**
@@ -81,10 +148,10 @@ class ResultsPresenter
      *
      * @return FormattedResult|null
      */
-    public function municipality(int $electionCode, Municipality $municipality): ?array
+    public function municipality(int $electionCode, Office $office, Municipality $municipality): ?array
     {
         $result = Result::query()
-            ->forElection($electionCode, Result::SCOPE_MUNICIPALITY)
+            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
             ->where('scope_code', $municipality->tse_code)
             ->first();
 
@@ -92,89 +159,67 @@ class ResultsPresenter
     }
 
     /**
-     * Results cached until the next synchronization.
+     * Value cached until the next synchronization of the election.
      *
-     * @return array{country: CountrySummary|null, states: list<StateResult>, map: array<string, MapEntry>}
+     * @template TValue
+     *
+     * @param  Closure(): TValue  $callback
+     * @return TValue
      */
-    private function data(int $electionCode): array
+    private function remember(int $electionCode, string $key, Closure $callback): mixed
     {
-        return Cache::remember(ResultSynchronizer::cacheKey($electionCode), now()->addMinutes(5), function () use ($electionCode): array {
-            $country = Result::query()->forElection($electionCode, Result::SCOPE_COUNTRY)->first();
-
-            $states = array_values(Result::query()
-                ->forElection($electionCode, Result::SCOPE_STATE)
-                ->get()
-                ->map(function (Result $result): array {
-                    $state = State::from($result->scope_code);
-
-                    return [
-                        'code' => $state->abbreviation(),
-                        'name' => $state->label(),
-                        ...$this->format($result),
-                    ];
-                })
-                ->sortBy(fn (array $state): string => $state['code'] === 'ZZ' ? 'ZZZ' : $state['name'])
-                ->all());
-
-            $map = Result::query()
-                ->forElection($electionCode, Result::SCOPE_MUNICIPALITY)
-                ->join('municipalities', 'municipalities.tse_code', '=', 'results.scope_code')
-                ->whereNotNull('municipalities.ibge_code')
-                ->get(['municipalities.ibge_code', 'results.votes', 'results.valid_votes', 'results.leading_candidate_id', 'results.counted_percent'])
-                ->mapWithKeys(function (Result $result): array {
-                    $votes = $result->votes;
-                    $leaderVotes = $result->leading_candidate_id === null ? 0 : ($votes[$result->leading_candidate_id] ?? 0);
-
-                    return [(string) $result->getAttribute('ibge_code') => [
-                        $result->leading_candidate_id,
-                        $this->percent($leaderVotes, array_sum($votes)),
-                        round($result->counted_percent, 2),
-                    ]];
-                })
-                ->all();
-
-            return [
-                'country' => $country === null ? null : [...$this->format($country), 'winner' => $this->winner($country)],
-                'states' => $states,
-                'map' => $map,
-            ];
-        });
+        return Cache::remember(ResultSynchronizer::cacheKey($electionCode, $key), now()->addMinutes(5), $callback);
     }
 
     /**
      * Who won, if anyone: officially elected by the TSE, or mathematically
      * elected because even if every voter still to be counted voted validly
-     * against the leader, the leader would keep more than half of the valid
-     * votes (in the runoff: a lead larger than the voters left).
+     * against them, nobody could catch up.
      *
-     * @return Winner|null
+     * With a majority (president, governor) the leader must keep more than
+     * half of the valid votes (in the runoff: a lead larger than the voters
+     * left). In a plurality (senator, one vote per seat) each of the first
+     * candidates must lead the best one outside the seats by more than the
+     * voters left. Proportional seats depend on the party quotient, so only
+     * the TSE declares them.
+     *
+     * @return list<Winner>
      */
-    private function winner(Result $country): ?array
+    private function winners(Result $result, Office $office): array
     {
-        if ($country->elected_candidate_id !== null) {
-            return ['candidate_id' => $country->elected_candidate_id, 'status' => 'elected'];
+        if (! empty($result->elected_candidate_ids)) {
+            return array_map(fn (int $candidateId): array => ['candidate_id' => $candidateId, 'status' => 'elected'], $result->elected_candidate_ids);
         }
 
-        $leaderId = $country->leading_candidate_id;
-
-        if ($leaderId === null || $country->sections_counted === 0) {
-            return null;
+        if ($office->isProportional() || $result->leading_candidate_id === null || $result->sections_counted === 0) {
+            return [];
         }
 
-        $votes = $country->votes;
-        $leaderVotes = $votes[$leaderId] ?? 0;
-        $validVotes = max($country->valid_votes, array_sum($votes));
+        $votes = $result->sortedVotes();
         // Voters in counted sections; turnout + abstentions is the same up to
         // the few sections that were never installed (a safe overestimate of
         // the voters left), and does not depend on a newer column.
-        $counted = (int) $country->electorate_counted ?: $country->turnout + $country->abstentions;
-        $votersLeft = max($country->electorate - $counted, 0);
+        $counted = (int) $result->electorate_counted ?: $result->turnout + $result->abstentions;
+        $votersLeft = max($result->electorate - $counted, 0);
+        $status = $result->is_final ? 'elected' : 'mathematical';
 
-        if (2 * $leaderVotes <= $validVotes + $votersLeft) {
-            return null;
+        if ($office->requiresMajority()) {
+            $leaderVotes = reset($votes) ?: 0;
+            $validVotes = max($result->valid_votes, array_sum($votes));
+
+            return 2 * $leaderVotes > $validVotes + $votersLeft
+                ? [['candidate_id' => (int) array_key_first($votes), 'status' => $status]]
+                : [];
         }
 
-        return ['candidate_id' => $leaderId, 'status' => $country->is_final ? 'elected' : 'mathematical'];
+        $challengerVotes = array_values($votes)[$result->seats] ?? 0;
+
+        return collect($votes)
+            ->take($result->seats)
+            ->filter(fn (int $count): bool => $count - $challengerVotes > $votersLeft)
+            ->map(fn (int $count, int $candidateId): array => ['candidate_id' => $candidateId, 'status' => $status])
+            ->values()
+            ->all();
     }
 
     /**
@@ -183,7 +228,8 @@ class ResultsPresenter
     private function format(Result $result): array
     {
         $votes = $result->sortedVotes();
-        $nominal = array_sum($votes);
+        // Deputy valid votes also count votes for the party only.
+        $validVotes = max($result->valid_votes, array_sum($votes));
 
         return [
             'counted_percent' => round($result->counted_percent, 2),
@@ -195,13 +241,14 @@ class ResultsPresenter
             'valid_votes' => $result->valid_votes,
             'blank_votes' => $result->blank_votes,
             'null_votes' => $result->null_votes,
+            'seats' => $result->seats,
             'is_final' => $result->is_final,
             'leader_id' => $result->leading_candidate_id,
             'updated_at' => $result->tse_updated_at?->toIso8601String(),
             'results' => array_map(fn (int $count, int $candidateId): array => [
                 'candidate_id' => $candidateId,
                 'votes' => $count,
-                'percent' => $this->percent($count, $nominal),
+                'percent' => $this->percent($count, $validVotes),
             ], $votes, array_keys($votes)),
         ];
     }

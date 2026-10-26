@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\Office;
+use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
     $candidate = Candidate::factory()->create();
@@ -37,4 +40,25 @@ test('colors must be hexadecimal', function () {
     $this->actingAs(User::factory()->create())
         ->patch(route('admin.candidates.update', $candidate), ['color' => 'red'])
         ->assertSessionHasErrors(['color' => 'Informe uma cor no formato #RRGGBB.']);
+});
+
+test('admins see the candidates of the chosen office and state', function () {
+    $president = Candidate::factory()->create();
+    $governor = Candidate::factory()->running(Office::Governor, State::RioDeJaneiro)->create();
+    Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    $admin = User::factory()->create();
+
+    $this->actingAs($admin)
+        ->get(route('admin.candidates.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('office', 'presidente')
+            ->has('candidates', 1)
+            ->where('candidates.0.id', $president->id));
+
+    $this->actingAs($admin)
+        ->get(route('admin.candidates.index', ['cargo' => 'governador', 'uf' => 'rj']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('state', 'rj')
+            ->has('candidates', 1)
+            ->where('candidates.0.id', $governor->id));
 });

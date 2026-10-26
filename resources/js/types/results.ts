@@ -5,7 +5,21 @@ export type Candidate = {
     full_name: string;
     party: string;
     color: string;
-    photo_url: string | null;
+    /** Downloaded from the TSE on first use; may not exist. */
+    photo_url: string;
+};
+
+export type OfficeOption = {
+    value: string;
+    label: string;
+};
+
+/** A state with results of a state office. */
+export type Place = {
+    code: string;
+    name: string;
+    counted_percent: number;
+    is_final: boolean;
 };
 
 export type Winner = {
@@ -30,12 +44,13 @@ export type ResultSummary = {
     valid_votes: number;
     blank_votes: number;
     null_votes: number;
+    seats: number;
     is_final: boolean;
     leader_id: number | null;
     updated_at: string | null;
     results: CandidateResult[];
-    /** Only in the national summary. */
-    winner?: Winner | null;
+    /** Only in the summary of the place where the office is elected. */
+    winners?: Winner[];
 };
 
 export type StateResult = ResultSummary & {

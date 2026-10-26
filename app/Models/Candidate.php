@@ -2,16 +2,19 @@
 
 namespace App\Models;
 
+use App\Enums\Office;
+use App\Enums\State;
 use Database\Factories\CandidateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
  * @property string $tse_sequence
+ * @property Office $office
+ * @property State|null $state
  * @property int $number
  * @property string $ballot_name
  * @property string $full_name
@@ -20,7 +23,7 @@ use Illuminate\Support\Facades\Storage;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['tse_sequence', 'number', 'ballot_name', 'full_name', 'party', 'color'])]
+#[Fillable(['tse_sequence', 'office', 'state', 'number', 'ballot_name', 'full_name', 'party', 'color'])]
 class Candidate extends Model
 {
     /** @use HasFactory<CandidateFactory> */
@@ -44,9 +47,28 @@ class Candidate extends Model
         return "candidatos/{$sequence}.jpeg";
     }
 
-    public function hasPhoto(): bool
+    /**
+     * TSE election and directory that hold the official photo: every
+     * candidate runs in the first round, so its files always have it.
+     *
+     * @return array{0: int|null, 1: string}
+     */
+    public function photoSource(): array
     {
-        return Storage::exists(self::photoPath($this->tse_sequence));
+        return [$this->office->electionCode(1), $this->state->value ?? 'br'];
+    }
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'office' => Office::class,
+            'state' => State::class,
+        ];
     }
 
     /**
@@ -58,7 +80,7 @@ class Candidate extends Model
     }
 
     /**
-     * @return array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string|null}
+     * @return array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string}
      */
     public function toPublicArray(): array
     {
@@ -69,7 +91,7 @@ class Candidate extends Model
             'full_name' => $this->full_name,
             'party' => $this->party,
             'color' => $this->displayColor(),
-            'photo_url' => $this->hasPhoto() ? route('candidates.photo', $this) : null,
+            'photo_url' => route('candidates.photo', $this),
         ];
     }
 }

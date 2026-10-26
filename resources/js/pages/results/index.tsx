@@ -1,4 +1,4 @@
-import { Head, Link, useHttp, usePoll } from '@inertiajs/react';
+import { Head, Link, router, useHttp, usePoll } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import CandidateResults from '@/components/candidate-results';
 import MunicipalityPanel from '@/components/municipality-panel';
@@ -6,6 +6,7 @@ import NotificationToggle from '@/components/notification-toggle';
 import ResultsMap from '@/components/results-map';
 import StatesTable from '@/components/states-table';
 import WinnerCelebration from '@/components/winner-celebration';
+import type { CelebratedWinner } from '@/components/winner-celebration';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { home } from '@/routes';
@@ -14,6 +15,8 @@ import type {
     Candidate,
     MapResults,
     MunicipalityDetail,
+    OfficeOption,
+    Place,
     ResultSummary,
     StateResult,
 } from '@/types';
@@ -21,6 +24,11 @@ import type {
 type Props = {
     round: number;
     rounds: number[];
+    office: string;
+    offices: OfficeOption[];
+    /** Abbreviation of the state of a state office. */
+    state: string | null;
+    places: Place[];
     candidates: Candidate[];
     summary: ResultSummary | null;
     states: StateResult[];
@@ -30,9 +38,45 @@ type Props = {
 
 const POLL_INTERVAL = 20_000;
 
+const PRESIDENT = 'presidente';
+
+/**
+ * "Governador" → "governadores", "Deputado Federal" → "deputados federais".
+ */
+function plural(label: string): string {
+    return label
+        .toLowerCase()
+        .split(' ')
+        .map((word) =>
+            word.endsWith('l')
+                ? `${word.slice(0, -1)}is`
+                : word.endsWith('r')
+                  ? `${word}es`
+                  : `${word}s`,
+        )
+        .join(' ');
+}
+
+function celebrationTitle(
+    officeLabel: string,
+    stateName: string | undefined,
+    count: number,
+    mathematical: boolean,
+): string {
+    const elected = `${mathematical ? 'Matematicamente ' : ''}${count > 1 ? 'eleitos' : 'eleito'}`;
+    const office = count > 1 ? plural(officeLabel) : officeLabel.toLowerCase();
+    const title = `${elected.charAt(0).toUpperCase()}${elected.slice(1)} ${office}`;
+
+    return stateName ? `${title} · ${stateName}` : `${title} do Brasil`;
+}
+
 export default function ResultsIndex({
     round,
     rounds,
+    office,
+    offices,
+    state,
+    places,
     candidates,
     summary,
     states,
@@ -46,45 +90,97 @@ export default function ResultsIndex({
     usePoll(
         POLL_INTERVAL,
         {
-            only: ['candidates', 'summary', 'states', 'map'],
+            only: ['candidates', 'summary', 'states', 'places', 'map'],
             showProgress: false,
         },
-        { mode: 'rest', autoStart: !summary?.is_final },
+        {
+            mode: 'rest',
+            // A state office shows nothing until a state is picked.
+            autoStart:
+                (office === PRESIDENT || state !== null) && !summary?.is_final,
+        },
     );
 
     const candidatesById = new Map(
         candidates.map((candidate) => [candidate.id, candidate]),
     );
 
-    const winner = summary?.winner ?? null;
-    const winnerCandidate = winner
-        ? candidatesById.get(winner.candidate_id)
-        : undefined;
-    // Opens on load when there is a winner, and when one appears while the
-    // page is open (polling).
-    const [celebrating, setCelebrating] = useState(winner !== null);
-    const previousWinner = useRef(winner?.candidate_id ?? null);
+    const isNationwide = office === PRESIDENT;
+    const officeLabel =
+        offices.find((option) => option.value === office)?.label ?? '';
+    const stateName = places.find((place) => place.code === state)?.name;
+    // Deputies: seats split by party, results only per state.
+    const proportional = office.startsWith('deputado');
+
+    const winners = summary?.winners ?? [];
+    const celebrated: CelebratedWinner[] = winners.flatMap((winner) => {
+        const candidate = candidatesById.get(winner.candidate_id);
+
+        return candidate
+            ? [
+                  {
+                      winner,
+                      candidate,
+                      result: summary?.results.find(
+                          (result) =>
+                              result.candidate_id === winner.candidate_id,
+                      ),
+                  },
+              ]
+            : [];
+    });
+    const winnerIds = winners.map((winner) => winner.candidate_id).join();
+    // Opens on load when the place has winners, and when one appears while
+    // the page is open (polling).
+    const [celebrating, setCelebrating] = useState(winners.length > 0);
+    const previousWinners = useRef(winnerIds);
 
     useEffect(() => {
-        const current = winner?.candidate_id ?? null;
-
-        if (current !== null && current !== previousWinner.current) {
+        if (winnerIds !== '' && winnerIds !== previousWinners.current) {
             setCelebrating(true);
         }
 
-        previousWinner.current = current;
-    }, [winner?.candidate_id]);
+        previousWinners.current = winnerIds;
+    }, [winnerIds]);
+
+    /**
+     * Query string of a view, keeping the current office and state.
+     */
+    function viewQuery(changes: {
+        turno?: number;
+        cargo?: string;
+        uf?: string | null;
+    }) {
+        const view = {
+            turno: round,
+            cargo: office,
+            uf: state?.toLowerCase() ?? null,
+            ...changes,
+        };
+
+        return {
+            turno: view.turno,
+            ...(view.cargo !== PRESIDENT && { cargo: view.cargo }),
+            ...(view.cargo !== PRESIDENT && view.uf && { uf: view.uf }),
+        };
+    }
 
     function selectMunicipality(ibge: string) {
         setDetail(null);
         void http
-            .get(showMunicipality.url(ibge, { query: { turno: round } }))
+            .get(
+                showMunicipality.url(ibge, {
+                    query: { turno: round, cargo: office },
+                }),
+            )
             .then(setDetail);
     }
 
     return (
         <>
-            <Head title={`Apuração ${round}º turno`} />
+            <Head
+                title={`${officeLabel}${state ? ` ${state}` : ''} · ${round}º turno`}
+            />
 
             <div className="min-h-screen bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
                 <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -97,7 +193,8 @@ export default function ResultsIndex({
                             />
                             <div>
                                 <h1 className="text-lg leading-tight font-bold text-zinc-900 dark:text-zinc-50">
-                                    Eleições 2026 · Presidente
+                                    Eleições 2026 · {officeLabel}
+                                    {stateName && ` · ${stateName}`}
                                 </h1>
                                 <p className="text-xs text-zinc-500">
                                     Dados oficiais da divulgação do TSE
@@ -109,7 +206,9 @@ export default function ResultsIndex({
                             {rounds.map((value) => (
                                 <Link
                                     key={value}
-                                    href={home({ query: { turno: value } })}
+                                    href={home({
+                                        query: viewQuery({ turno: value }),
+                                    })}
                                     preserveScroll
                                     className={cn(
                                         'rounded-full px-4 py-1.5 text-sm font-medium',
@@ -127,13 +226,92 @@ export default function ResultsIndex({
                             <NotificationToggle />
                         </div>
                     </div>
+
+                    <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pb-3">
+                        <nav className="-mx-1 flex gap-1 overflow-x-auto px-1">
+                            {offices.map((option) => (
+                                <Link
+                                    key={option.value}
+                                    href={home({
+                                        query: viewQuery({
+                                            cargo: option.value,
+                                        }),
+                                    })}
+                                    preserveScroll
+                                    className={cn(
+                                        'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
+                                        option.value === office
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                                    )}
+                                >
+                                    {option.label}
+                                </Link>
+                            ))}
+                        </nav>
+
+                        {!isNationwide && state && (
+                            <select
+                                value={state ?? ''}
+                                onChange={(event) =>
+                                    router.visit(
+                                        home({
+                                            query: viewQuery({
+                                                uf: event.target.value.toLowerCase(),
+                                            }),
+                                        }),
+                                        { preserveScroll: true },
+                                    )
+                                }
+                                aria-label="Estado"
+                                className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                            >
+                                {places.map((place) => (
+                                    <option key={place.code} value={place.code}>
+                                        {place.name}
+                                        {!place.is_final &&
+                                            ` (${formatPercent(place.counted_percent)})`}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                    </div>
                 </header>
 
                 <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-                    {!summary ? (
+                    {!isNationwide && !state && places.length > 0 ? (
+                        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                                Escolha o estado
+                            </h2>
+                            <p className="mb-4 text-sm text-zinc-500">
+                                Veja o resultado de {officeLabel} no {round}º
+                                turno.
+                            </p>
+                            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                                {places.map((place) => (
+                                    <li key={place.code}>
+                                        <Link
+                                            href={home({
+                                                query: viewQuery({
+                                                    uf: place.code.toLowerCase(),
+                                                }),
+                                            })}
+                                            className="flex items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-medium text-zinc-800 hover:border-emerald-600 hover:bg-emerald-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/40"
+                                        >
+                                            <span className="w-7 text-xs font-bold text-zinc-500">
+                                                {place.code}
+                                            </span>
+                                            {place.name}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    ) : !summary ? (
                         <div className="rounded-xl border border-dashed border-zinc-300 p-10 text-center text-zinc-500 dark:border-zinc-700">
-                            Ainda não há resultados sincronizados para o {round}
-                            º turno.
+                            Ainda não há resultados de {officeLabel}{' '}
+                            sincronizados para o {round}º turno.
                         </div>
                     ) : (
                         <>
@@ -177,9 +355,11 @@ export default function ResultsIndex({
                                         />
                                     </div>
                                     <CandidateResults
+                                        key={`${office}-${state}`}
                                         results={summary.results}
                                         candidates={candidatesById}
-                                        winner={winner}
+                                        winners={winners}
+                                        proportional={proportional}
                                         onCelebrate={() => setCelebrating(true)}
                                     />
                                 </div>
@@ -208,97 +388,115 @@ export default function ResultsIndex({
                                 </dl>
                             </section>
 
-                            <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                                <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                        <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
-                                            Quem lidera em cada município
-                                        </h2>
-                                        <select
-                                            value={selectedState}
-                                            onChange={(event) =>
-                                                setSelectedState(
-                                                    event.target.value,
-                                                )
-                                            }
-                                            className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                                        >
-                                            <option value="">Brasil</option>
-                                            {states
-                                                .filter(
-                                                    (state) =>
-                                                        state.code !== 'ZZ',
-                                                )
-                                                .map((state) => (
-                                                    <option
-                                                        key={state.code}
-                                                        value={state.code}
-                                                    >
-                                                        {state.name}
+                            {!proportional && (
+                                <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                                    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                                                Quem lidera em cada município
+                                            </h2>
+                                            {isNationwide && (
+                                                <select
+                                                    value={selectedState}
+                                                    onChange={(event) =>
+                                                        setSelectedState(
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                                                >
+                                                    <option value="">
+                                                        Brasil
                                                     </option>
-                                                ))}
-                                        </select>
-                                    </div>
+                                                    {states
+                                                        .filter(
+                                                            (state) =>
+                                                                state.code !==
+                                                                'ZZ',
+                                                        )
+                                                        .map((state) => (
+                                                            <option
+                                                                key={state.code}
+                                                                value={
+                                                                    state.code
+                                                                }
+                                                            >
+                                                                {state.name}
+                                                            </option>
+                                                        ))}
+                                                </select>
+                                            )}
+                                        </div>
 
-                                    {mapAvailable ? (
-                                        <ResultsMap
-                                            results={map}
-                                            candidates={candidatesById}
-                                            selectedState={selectedState}
-                                            onSelect={selectMunicipality}
-                                        />
-                                    ) : (
-                                        <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                                            Mapa ainda não gerado. Rode{' '}
-                                            <code>php artisan mapa:baixar</code>
-                                            .
-                                        </p>
-                                    )}
+                                        {mapAvailable ? (
+                                            <ResultsMap
+                                                results={map}
+                                                candidates={candidatesById}
+                                                selectedState={
+                                                    isNationwide
+                                                        ? selectedState
+                                                        : (state ?? '')
+                                                }
+                                                restrictToState={!isNationwide}
+                                                onSelect={selectMunicipality}
+                                            />
+                                        ) : (
+                                            <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                                                Mapa ainda não gerado. Rode{' '}
+                                                <code>
+                                                    php artisan mapa:baixar
+                                                </code>
+                                                .
+                                            </p>
+                                        )}
 
-                                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-                                        {candidates.map((candidate) => (
-                                            <span
-                                                key={candidate.id}
-                                                className="flex items-center gap-1.5"
-                                            >
+                                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+                                            {candidates.map((candidate) => (
                                                 <span
-                                                    className="size-3 rounded-sm"
-                                                    style={{
-                                                        backgroundColor:
-                                                            candidate.color,
-                                                    }}
-                                                />
-                                                {candidate.name}
+                                                    key={candidate.id}
+                                                    className="flex items-center gap-1.5"
+                                                >
+                                                    <span
+                                                        className="size-3 rounded-sm"
+                                                        style={{
+                                                            backgroundColor:
+                                                                candidate.color,
+                                                        }}
+                                                    />
+                                                    {candidate.name}
+                                                </span>
+                                            ))}
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="size-3 rounded-sm bg-zinc-200 dark:bg-zinc-800" />
+                                                Sem apuração
                                             </span>
-                                        ))}
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="size-3 rounded-sm bg-zinc-200 dark:bg-zinc-800" />
-                                            Sem apuração
-                                        </span>
-                                        <span className="w-full sm:ml-auto sm:w-auto">
-                                            Cor mais forte = vitória mais
-                                            folgada
-                                        </span>
+                                            <span className="w-full sm:ml-auto sm:w-auto">
+                                                Cor mais forte = vitória mais
+                                                folgada
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="space-y-4">
-                                    <MunicipalityPanel
-                                        detail={detail}
-                                        loading={http.processing}
-                                        onClose={() => {
-                                            http.cancel();
-                                            setDetail(null);
-                                        }}
-                                    />
-                                    <StatesTable
-                                        states={states}
-                                        candidates={candidatesById}
-                                        selectedState={selectedState}
-                                        onSelect={setSelectedState}
-                                    />
-                                </div>
-                            </section>
+                                    <div className="space-y-4">
+                                        <MunicipalityPanel
+                                            detail={detail}
+                                            loading={http.processing}
+                                            onClose={() => {
+                                                http.cancel();
+                                                setDetail(null);
+                                            }}
+                                        />
+                                        {isNationwide && (
+                                            <StatesTable
+                                                states={states}
+                                                candidates={candidatesById}
+                                                selectedState={selectedState}
+                                                onSelect={setSelectedState}
+                                            />
+                                        )}
+                                    </div>
+                                </section>
+                            )}
                         </>
                     )}
                 </main>
@@ -310,12 +508,16 @@ export default function ResultsIndex({
                 </footer>
             </div>
 
-            {celebrating && winner && winnerCandidate && (
+            {celebrating && celebrated.length > 0 && (
                 <WinnerCelebration
-                    winner={winner}
-                    candidate={winnerCandidate}
-                    result={summary?.results.find(
-                        (result) => result.candidate_id === winner.candidate_id,
+                    winners={celebrated}
+                    title={celebrationTitle(
+                        officeLabel,
+                        stateName,
+                        celebrated.length,
+                        celebrated.some(
+                            ({ winner }) => winner.status === 'mathematical',
+                        ),
                     )}
                     round={round}
                     onClose={() => setCelebrating(false)}

@@ -2,6 +2,7 @@
 
 namespace App\Services\Tse;
 
+use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Municipality;
@@ -9,14 +10,16 @@ use App\Models\Result;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 /**
- * Downloads presidential results from the TSE and stores them locally.
+ * Downloads the results of every office of an election from the TSE and
+ * stores them locally.
  *
  * Municipality files are only downloaded when the per-state progress file
  * ("-ab.json") reports a newer totalization time than the stored one, so a
- * sync during the count only fetches what actually changed.
+ * sync during the count only fetches what actually changed. Once every result
+ * of an election is final and was downloaded without failures, the election
+ * is complete and the TSE is no longer requested for it.
  */
 class ResultSynchronizer
 {
@@ -27,49 +30,105 @@ class ResultSynchronizer
      */
     private array $candidateIds = [];
 
+    /**
+     * Whether every result downloaded in the current sync is final.
+     */
+    private bool $allFinal = true;
+
     public function __construct(private readonly TseClient $client) {}
 
     /**
-     * @return array{states: int, municipalities: int, counted_percent: float, country_changed: bool}
+     * @param  list<Office>  $offices  offices of the election to synchronize
+     * @return array{states: int, municipalities: int, counted_percent: float|null, country_changed: bool, complete: bool}
+     *
+     * @throws RateLimitedException
      */
-    public function sync(int $electionCode, bool $full = false): array
+    public function sync(int $electionCode, array $offices, bool $full = false): array
     {
-        if ($full || Municipality::query()->doesntExist()) {
+        $failuresBefore = $this->client->failedRequests();
+        $this->allFinal = true;
+
+        // Every election lists the same municipalities: a full sync refreshes
+        // them once, with the federal election.
+        if (($full && in_array(Office::President, $offices, true)) || Municipality::query()->doesntExist()) {
             $this->importMunicipalities($electionCode);
         }
 
-        $country = ResultPayload::fromTse($this->client->fetch($this->client->countryResultUrl($electionCode)));
+        $country = null;
+        $countryChanged = false;
 
-        $previousUpdate = Result::query()
-            ->forElection($electionCode, Result::SCOPE_COUNTRY)
-            ->value('tse_updated_at');
+        if (in_array(Office::President, $offices, true)) {
+            $country = ResultPayload::fromTse($this->client->fetch($this->client->countryResultUrl($electionCode, Office::President)));
 
-        $countryChanged = $previousUpdate === null
-            || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
+            $previousUpdate = Result::query()
+                ->forElection($electionCode, Office::President, Result::SCOPE_COUNTRY)
+                ->value('tse_updated_at');
 
-        $this->storeCandidates($country);
-        $this->downloadPhotos($electionCode);
-        $this->storeResults($electionCode, Result::SCOPE_COUNTRY, ['br' => $country]);
+            $countryChanged = $previousUpdate === null
+                || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
 
-        $states = $this->syncStates($electionCode);
-        $municipalities = $this->syncMunicipalities($electionCode, $full);
+            $this->allFinal = $country->isFinal;
+            $this->storeCandidates(Office::President, null, $country);
+            $this->storeResults($electionCode, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]);
+        }
 
-        Cache::forget(self::cacheKey($electionCode));
+        $states = 0;
+        $disputedStates = [];
+
+        foreach ($offices as $office) {
+            $disputedStates[$office->value] = $this->disputedStates($electionCode, $office);
+            $states += $this->syncStates($electionCode, $office, $disputedStates[$office->value]);
+        }
+
+        $municipalities = $this->syncMunicipalities(
+            $electionCode,
+            array_values(array_filter($offices, fn (Office $office): bool => $office->hasMunicipalityResults())),
+            $disputedStates,
+            $full,
+        );
+
+        Cache::forever(self::versionKey($electionCode), (int) Cache::get(self::versionKey($electionCode), 0) + 1);
+
+        $complete = $states > 0 && $this->allFinal && $this->client->failedRequests() === $failuresBefore;
+        Cache::forever(self::completeKey($electionCode), $complete);
 
         return [
             'states' => $states,
             'municipalities' => $municipalities,
-            'counted_percent' => $country->countedPercent,
+            'counted_percent' => $country?->countedPercent,
             'country_changed' => $countryChanged,
+            'complete' => $complete,
         ];
     }
 
     /**
-     * Cache key used by readers of the results of an election.
+     * Whether the last sync of the election downloaded every result, all of
+     * them final, so there is nothing left to download.
      */
-    public static function cacheKey(int $electionCode): string
+    public static function isComplete(int $electionCode): bool
     {
-        return "eleicoes.resultados.{$electionCode}";
+        return (bool) Cache::get(self::completeKey($electionCode), false);
+    }
+
+    private static function completeKey(int $electionCode): string
+    {
+        return "eleicoes.resultados.{$electionCode}.concluida";
+    }
+
+    /**
+     * Cache key used by readers of the results of an election; every sync
+     * moves the keys of the election to a new version.
+     */
+    public static function cacheKey(int $electionCode, string $suffix): string
+    {
+        $version = (int) Cache::get(self::versionKey($electionCode), 0);
+
+        return "eleicoes.resultados.{$electionCode}.v{$version}.{$suffix}";
+    }
+
+    private static function versionKey(int $electionCode): string
+    {
+        return "eleicoes.resultados.{$electionCode}.versao";
     }
 
     public function importMunicipalities(int $electionCode): int
@@ -109,165 +168,256 @@ class ResultSynchronizer
         return count($rows);
     }
 
-    private function syncStates(int $electionCode): int
+    /**
+     * States where the office is disputed in the election: in a runoff, only
+     * those where nobody was elected in the first round (when it is synced),
+     * so the TSE is not asked every time for files that do not exist.
+     *
+     * @return list<State>
+     */
+    private function disputedStates(int $electionCode, Office $office): array
     {
-        $urls = collect(State::cases())
-            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateResultUrl($electionCode, $state)])
+        $firstRound = $office->electionCode(1);
+
+        if ($office->isNationwide() || $firstRound === null || $firstRound === $electionCode) {
+            return $office->states();
+        }
+
+        $undecided = Result::query()
+            ->forElection($firstRound, $office, Result::SCOPE_STATE)
+            ->get(['scope_code', 'elected_candidate_ids']);
+
+        if ($undecided->isEmpty()) {
+            return $office->states();
+        }
+
+        $codes = $undecided->filter(fn (Result $result): bool => empty($result->elected_candidate_ids))->pluck('scope_code')->all();
+
+        return array_values(array_filter($office->states(), fn (State $state): bool => in_array($state->value, $codes, true)));
+    }
+
+    /**
+     * @param  list<State>  $states
+     */
+    private function syncStates(int $electionCode, Office $office, array $states): int
+    {
+        $urls = collect($states)
+            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateResultUrl($electionCode, $office, $state)])
             ->all();
 
+        // A missing file means the office has no result there (no runoff in
+        // that state, or not published yet).
         $payloads = collect($this->client->fetchMany($urls))
             ->filter()
             ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
             ->all();
 
-        $this->storeResults($electionCode, Result::SCOPE_STATE, $payloads);
+        foreach ($payloads as $payload) {
+            $this->allFinal = $this->allFinal && $payload->isFinal;
+        }
+
+        if (! $office->isNationwide()) {
+            foreach ($payloads as $uf => $payload) {
+                $this->storeCandidates($office, State::from($uf), $payload);
+            }
+        }
+
+        $this->storeResults($electionCode, $office, Result::SCOPE_STATE, $payloads);
 
         return count($payloads);
     }
 
-    private function syncMunicipalities(int $electionCode, bool $full): int
+    /**
+     * @param  list<Office>  $offices
+     * @param  array<string, list<State>>  $disputedStates  keyed by office
+     */
+    private function syncMunicipalities(int $electionCode, array $offices, array $disputedStates, bool $full): int
     {
-        [$outdated, $reported] = $this->outdatedMunicipalities($electionCode, $full);
+        if ($offices === []) {
+            return 0;
+        }
+
+        $states = collect($offices)
+            ->flatMap(fn (Office $office): array => $disputedStates[$office->value])
+            ->unique(fn (State $state): string => $state->value)
+            ->values()
+            ->all();
+
+        [$progress, $reported] = $this->municipalityProgress($electionCode, $states);
 
         if (Municipality::query()->count() < count($reported)) {
             $this->importMunicipalities($electionCode);
         }
+
         $synced = 0;
 
-        foreach (array_chunk($outdated, 300, preserve_keys: true) as $chunk) {
-            $urls = [];
+        foreach ($offices as $office) {
+            $outdated = $this->outdatedMunicipalities($electionCode, $office, $disputedStates[$office->value], $progress, $full);
 
-            foreach ($chunk as $tseCode => $state) {
-                $urls[$tseCode] = $this->client->municipalityResultUrl($electionCode, $state, (string) $tseCode);
+            foreach (array_chunk($outdated, 300, preserve_keys: true) as $chunk) {
+                $urls = [];
+
+                foreach ($chunk as $tseCode => $state) {
+                    $urls[$tseCode] = $this->client->municipalityResultUrl($electionCode, $office, $state, (string) $tseCode);
+                }
+
+                $payloads = collect($this->client->fetchMany($urls))
+                    ->filter()
+                    ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
+                    ->all();
+
+                $this->storeResults($electionCode, $office, Result::SCOPE_MUNICIPALITY, $payloads);
+
+                $synced += count($payloads);
             }
-
-            $payloads = collect($this->client->fetchMany($urls))
-                ->filter()
-                ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
-                ->all();
-
-            $this->storeResults($electionCode, Result::SCOPE_MUNICIPALITY, $payloads);
-
-            $synced += count($payloads);
         }
 
         return $synced;
     }
 
     /**
-     * Municipalities whose stored result is older than what the TSE reports,
-     * and every municipality code the TSE reports.
+     * Counting progress of every municipality with sections counted, and
+     * every municipality code the TSE reports.
      *
-     * @return array{0: array<string, State>, 1: list<string>}
+     * @param  list<State>  $states
+     * @return array{0: array<string, array{state: State, updated_at: string|null, counted: bool}>, 1: list<string>}
      */
-    private function outdatedMunicipalities(int $electionCode, bool $full): array
+    private function municipalityProgress(int $electionCode, array $states): array
     {
-        $urls = collect(State::cases())
+        $urls = collect($states)
             ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateProgressUrl($electionCode, $state)])
             ->all();
 
-        $storedUpdates = Result::query()
-            ->forElection($electionCode, Result::SCOPE_MUNICIPALITY)
-            ->pluck('tse_updated_at', 'scope_code')
-            ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'));
-
-        $outdated = [];
+        $progress = [];
         $reported = [];
 
-        foreach ($this->client->fetchMany($urls) as $uf => $progress) {
-            foreach ($progress['abr'] ?? [] as $municipality) {
+        foreach ($this->client->fetchMany($urls) as $uf => $file) {
+            foreach ($file['abr'] ?? [] as $municipality) {
                 if (($municipality['tpabr'] ?? null) !== 'mun') {
                     continue;
                 }
 
                 $tseCode = (string) $municipality['cdabr'];
                 $reported[] = $tseCode;
-                $sectionsCounted = (int) ($municipality['s']['st'] ?? 0);
-                $updatedAt = ResultPayload::dateTime($municipality['dt'] ?? null, $municipality['ht'] ?? null)?->format('Y-m-d H:i:s');
-
-                if ($sectionsCounted === 0 && ! $storedUpdates->has($tseCode)) {
-                    continue;
-                }
-
-                if ($full || $storedUpdates->get($tseCode) !== $updatedAt) {
-                    $outdated[$tseCode] = State::from($uf);
-                }
+                $progress[$tseCode] = [
+                    'state' => State::from($uf),
+                    'updated_at' => ResultPayload::dateTime($municipality['dt'] ?? null, $municipality['ht'] ?? null)?->format('Y-m-d H:i:s'),
+                    'counted' => (int) ($municipality['s']['st'] ?? 0) > 0,
+                ];
             }
         }
 
-        return [$outdated, $reported];
+        return [$progress, $reported];
     }
 
     /**
-     * Download, once, the official photo of each candidate that has none.
+     * Municipalities whose stored result of an office is older than what the
+     * TSE reports.
+     *
+     * @param  list<State>  $states
+     * @param  array<string, array{state: State, updated_at: string|null, counted: bool}>  $progress
+     * @return array<string, State>
      */
-    private function downloadPhotos(int $electionCode): void
+    private function outdatedMunicipalities(int $electionCode, Office $office, array $states, array $progress, bool $full): array
     {
-        $urls = Candidate::query()
-            ->get()
-            ->reject(fn (Candidate $candidate): bool => $candidate->hasPhoto())
-            ->mapWithKeys(fn (Candidate $candidate): array => [
-                $candidate->tse_sequence => $this->client->candidatePhotoUrl($electionCode, $candidate->tse_sequence),
-            ])
-            ->all();
+        $storedUpdates = Result::query()
+            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
+            ->pluck('tse_updated_at', 'scope_code')
+            ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'));
 
-        foreach ($this->client->downloadMany($urls) as $sequence => $photo) {
-            if ($photo !== null && str_starts_with($photo, "\xFF\xD8")) {
-                Storage::put(Candidate::photoPath((string) $sequence), $photo);
+        $outdated = [];
+
+        foreach ($progress as $tseCode => $municipality) {
+            $tseCode = (string) $tseCode;
+
+            if (! in_array($municipality['state'], $states, true)) {
+                continue;
+            }
+
+            if (! $municipality['counted'] && ! $storedUpdates->has($tseCode)) {
+                continue;
+            }
+
+            if ($full || $storedUpdates->get($tseCode) !== $municipality['updated_at']) {
+                $outdated[$tseCode] = $municipality['state'];
             }
         }
+
+        return $outdated;
     }
 
-    private function storeCandidates(ResultPayload $payload): void
+    private function storeCandidates(Office $office, ?State $state, ResultPayload $payload): void
     {
         $now = now();
 
         $rows = collect($payload->candidates)
             ->map(fn (array $candidate): array => [
                 ...collect($candidate)->except(['votes', 'elected'])->all(),
+                'office' => $office->value,
+                'state' => $state?->value,
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
             ->all();
 
-        Candidate::query()->upsert($rows, ['tse_sequence'], ['number', 'ballot_name', 'full_name', 'party', 'updated_at']);
+        foreach (array_chunk($rows, 500) as $chunk) {
+            Candidate::query()->upsert($chunk, ['tse_sequence'], ['office', 'state', 'number', 'ballot_name', 'full_name', 'party', 'updated_at']);
+        }
 
-        $this->candidateIds = Candidate::query()->pluck('id', 'tse_sequence')->all();
+        $this->rememberCandidateIds(array_column($payload->candidates, 'tse_sequence'));
+    }
+
+    /**
+     * Load the ids of the given candidates that are not known yet.
+     *
+     * @param  list<string>  $sequences
+     */
+    private function rememberCandidateIds(array $sequences): void
+    {
+        $missing = array_values(array_diff($sequences, array_keys($this->candidateIds)));
+
+        foreach (array_chunk($missing, 500) as $chunk) {
+            $this->candidateIds += Candidate::query()->whereIn('tse_sequence', $chunk)->pluck('id', 'tse_sequence')->all();
+        }
     }
 
     /**
      * @param  array<string, ResultPayload>  $payloads  keyed by scope code
      */
-    private function storeResults(int $electionCode, string $scope, array $payloads): void
+    private function storeResults(int $electionCode, Office $office, string $scope, array $payloads): void
     {
         if ($payloads === []) {
             return;
-        }
-
-        if ($this->candidateIds === []) {
-            $this->candidateIds = Candidate::query()->pluck('id', 'tse_sequence')->all();
         }
 
         $now = now();
         $rows = [];
 
         foreach ($payloads as $scopeCode => $payload) {
+            $this->rememberCandidateIds(array_column($payload->candidates, 'tse_sequence'));
             $votes = [];
+            $elected = [];
 
             foreach ($payload->candidates as $candidate) {
                 $candidateId = $this->candidateIds[$candidate['tse_sequence']] ?? null;
 
-                if ($candidateId !== null) {
-                    $votes[$candidateId] = $candidate['votes'];
+                if ($candidateId === null) {
+                    continue;
+                }
+
+                $votes[$candidateId] = $candidate['votes'];
+
+                if ($candidate['elected']) {
+                    $elected[] = $candidateId;
                 }
             }
 
             arsort($votes);
             $leaderId = array_key_first($votes);
-            $elected = collect($payload->candidates)->firstWhere('elected', true);
 
             $rows[] = [
                 'election_code' => $electionCode,
+                'office' => $office->value,
                 'scope' => $scope,
                 'scope_code' => (string) $scopeCode,
                 'sections_total' => $payload->sectionsTotal,
@@ -281,8 +431,9 @@ class ResultSynchronizer
                 'blank_votes' => $payload->blankVotes,
                 'null_votes' => $payload->nullVotes,
                 'votes' => json_encode((object) $votes, JSON_THROW_ON_ERROR),
+                'seats' => $payload->seats,
                 'leading_candidate_id' => $leaderId !== null && $votes[$leaderId] > 0 ? $leaderId : null,
-                'elected_candidate_id' => $elected === null ? null : ($this->candidateIds[$elected['tse_sequence']] ?? null),
+                'elected_candidate_ids' => $elected === [] ? null : json_encode($elected, JSON_THROW_ON_ERROR),
                 'is_final' => $payload->isFinal,
                 'tse_updated_at' => $payload->updatedAt?->format('Y-m-d H:i:s'),
                 'created_at' => $now,
@@ -292,10 +443,10 @@ class ResultSynchronizer
 
         DB::transaction(function () use ($rows): void {
             foreach (array_chunk($rows, 200) as $chunk) {
-                Result::query()->upsert($chunk, ['election_code', 'scope', 'scope_code'], [
+                Result::query()->upsert($chunk, ['election_code', 'office', 'scope', 'scope_code'], [
                     'sections_total', 'sections_counted', 'counted_percent', 'electorate', 'electorate_counted',
-                    'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes', 'votes',
-                    'leading_candidate_id', 'elected_candidate_id', 'is_final', 'tse_updated_at', 'updated_at',
+                    'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes', 'votes', 'seats',
+                    'leading_candidate_id', 'elected_candidate_ids', 'is_final', 'tse_updated_at', 'updated_at',
                 ]);
             }
         });

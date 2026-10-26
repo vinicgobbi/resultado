@@ -1,13 +1,18 @@
 <?php
 
+use App\Enums\Office;
+use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Models\PushSubscription;
 use App\Models\Result;
+use App\Services\Tse\ResultSynchronizer;
+use App\Services\Tse\TseClient;
 use App\Services\WebPush;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 
 const TSE_BASE = 'https://resultados.tse.jus.br/oficial/ele2026/6258';
 
@@ -93,15 +98,15 @@ test('sync stores candidates and results for every scope', function () {
     $flavio = Candidate::query()->where('number', 22)->sole();
     $lula = Candidate::query()->where('number', 13)->sole();
 
-    $country = Result::query()->forElection(6258, Result::SCOPE_COUNTRY)->sole();
+    $country = Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->sole();
     expect($country->leading_candidate_id)->toBe($flavio->id)
         ->and($country->votes)->toBe([$flavio->id => 600, $lula->id => 400])
         ->and($country->counted_percent)->toBe(50.0)
         ->and($country->tse_updated_at?->format('Y-m-d H:i:s'))->toBe('2026-10-25 20:00:00');
 
-    expect(Result::query()->forElection(6258, Result::SCOPE_STATE)->pluck('scope_code')->all())->toBe(['sp']);
+    expect(Result::query()->forElection(6258, Office::President, Result::SCOPE_STATE)->pluck('scope_code')->all())->toBe(['sp']);
 
-    $saoPaulo = Result::query()->forElection(6258, Result::SCOPE_MUNICIPALITY)->sole();
+    $saoPaulo = Result::query()->forElection(6258, Office::President, Result::SCOPE_MUNICIPALITY)->sole();
     expect($saoPaulo->scope_code)->toBe('71072')
         ->and($saoPaulo->leading_candidate_id)->toBe($lula->id);
 });
@@ -115,7 +120,7 @@ test('sync only downloads municipalities updated since the last run', function (
     $this->artisan('tse:sincronizar')->assertSuccessful();
     expect(municipalityFileRequests())->toBe(1);
 
-    Result::query()->forElection(6258, Result::SCOPE_MUNICIPALITY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    Result::query()->forElection(6258, Office::President, Result::SCOPE_MUNICIPALITY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
     expect(municipalityFileRequests())->toBe(2);
@@ -183,34 +188,264 @@ test('sync stores the officially elected candidate and the counted electorate', 
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
 
-    $country = Result::query()->forElection(6258, Result::SCOPE_COUNTRY)->sole();
-    expect($country->elected_candidate_id)->toBe(Candidate::query()->where('number', 13)->value('id'))
+    $country = Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->sole();
+    expect($country->elected_candidate_ids)->toBe([Candidate::query()->where('number', 13)->value('id')])
         ->and($country->electorate_counted)->toBe(900);
 });
 
-test('sync downloads each candidate photo once', function () {
+test('a candidate photo is downloaded from the TSE once, on the first request', function () {
     Http::preventStrayRequests();
     Storage::fake();
     $jpeg = "\xFF\xD8\xFF\xE0fake-jpeg";
-    fakeTse(overrides: [TSE_BASE.'/fotos/br/*' => Http::response($jpeg, 200, ['Content-Type' => 'image/jpeg'])]);
-    $photoRequests = fn (): int => Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/fotos/br/'))->count();
+    Http::fake(['resultados.tse.jus.br/oficial/ele2026/6259/fotos/sp/*' => Http::response($jpeg, 200, ['Content-Type' => 'image/jpeg'])]);
+    $candidate = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
 
-    $this->artisan('tse:sincronizar')->assertSuccessful();
-    expect($photoRequests())->toBe(2);
+    expect($candidate->toPublicArray()['photo_url'])->toBe(route('candidates.photo', $candidate));
 
-    $lula = Candidate::query()->where('number', 13)->sole();
-    Storage::assertExists(Candidate::photoPath($lula->tse_sequence));
-    expect($lula->toPublicArray()['photo_url'])->toBe(route('candidates.photo', $lula));
-    $this->get(route('candidates.photo', $lula))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+    $this->get(route('candidates.photo', $candidate))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+    $this->get(route('candidates.photo', $candidate))->assertOk();
 
-    $this->artisan('tse:sincronizar')->assertSuccessful();
-    expect($photoRequests())->toBe(2);
+    Storage::assertExists(Candidate::photoPath($candidate->tse_sequence));
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => $request->url() === "https://resultados.tse.jus.br/oficial/ele2026/6259/fotos/sp/{$candidate->tse_sequence}.jpeg");
 });
 
-test('a candidate without photo has no photo url', function () {
+test('presidential photos come from the first round of the federal election', function () {
+    Http::preventStrayRequests();
     Storage::fake();
+    Http::fake(['resultados.tse.jus.br/oficial/ele2026/6257/fotos/br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
     $candidate = Candidate::factory()->create();
 
-    expect($candidate->toPublicArray()['photo_url'])->toBeNull();
+    $this->get(route('candidates.photo', $candidate))->assertOk();
+});
+
+test('a missing photo is not requested again for a while', function () {
+    Http::preventStrayRequests();
+    Storage::fake();
+    Http::fake(['resultados.tse.jus.br/*' => Http::response('', 404)]);
+    $candidate = Candidate::factory()->create();
+
     $this->get(route('candidates.photo', $candidate))->assertNotFound();
+    $this->get(route('candidates.photo', $candidate))->assertNotFound();
+
+    Http::assertSentCount(1);
+});
+
+/**
+ * TSE result file of a state office.
+ *
+ * @param  array<string, array{0: string, 1: int, 2?: string}>  $candidates  number, votes and status keyed by sequence
+ * @return array<string, mixed>
+ */
+function tseOfficeResult(array $candidates, int $seats = 1, string $time = '22:00:00'): array
+{
+    return [
+        'dt' => '04/10/2026',
+        'ht' => $time,
+        'and' => 'f',
+        'carg' => [[
+            'nv' => (string) $seats,
+            'agr' => [[
+                'par' => [[
+                    'sg' => 'PARTIDO',
+                    'cand' => collect($candidates)->map(fn (array $candidate, string $sequence): array => [
+                        'sqcand' => $sequence,
+                        'n' => $candidate[0],
+                        'nm' => "CANDIDATO {$candidate[0]}",
+                        'vap' => (string) $candidate[1],
+                        'st' => $candidate[2] ?? 'Não eleito',
+                    ])->values()->all(),
+                ]],
+            ]],
+        ]],
+        's' => ['ts' => '100', 'st' => '100', 'pstn' => '100'],
+        'e' => ['te' => '1000', 'est' => '1000', 'c' => '800', 'a' => '200'],
+        'v' => ['vv' => (string) collect($candidates)->sum(fn (array $candidate): int => $candidate[1]), 'vb' => '10', 'tvn' => '20'],
+    ];
+}
+
+test('sync stores the governor, senator and deputy results of the state election', function () {
+    Http::preventStrayRequests();
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    $base = 'https://resultados.tse.jus.br/oficial/ele2026';
+    Http::fake([
+        "{$base}/6257/dados/br/br-c0001-e006257-u.json" => Http::response(tseResult(['280002542548' => 10])),
+        "{$base}/6259/dados/sp/sp-c0003-e006259-u.json" => Http::response(tseOfficeResult(['250000000001' => ['10', 600, 'Eleito'], '250000000002' => ['13', 400]])),
+        "{$base}/6259/dados/sp/sp-c0005-e006259-u.json" => Http::response(tseOfficeResult([
+            '250000000011' => ['101', 500, 'Eleito'], '250000000012' => ['131', 400, 'Eleito'], '250000000013' => ['555', 100],
+        ], seats: 2)),
+        "{$base}/6259/dados/sp/sp-c0006-e006259-u.json" => Http::response(tseOfficeResult([
+            '250000000021' => ['1010', 90, 'Eleito por QP'], '250000000022' => ['1311', 80, 'Eleito por média'], '250000000023' => ['1313', 85, 'Suplente'],
+        ], seats: 70)),
+        "{$base}/6259/dados/df/df-c0008-e006259-u.json" => Http::response(tseOfficeResult(['250000000031' => ['10123', 50, 'Eleito por QP']], seats: 24)),
+        "{$base}/6259/dados/sp/sp-e006259-ab.json" => Http::response(['abr' => [
+            ['tpabr' => 'mun', 'cdabr' => '71072', 'dt' => '04/10/2026', 'ht' => '21:00:00', 's' => ['st' => '10']],
+        ]]),
+        "{$base}/6259/dados/sp/sp71072-c0003-e006259-u.json" => Http::response(tseOfficeResult(['250000000001' => ['10', 40], '250000000002' => ['13', 60]], time: '21:00:00')),
+        "{$base}/6259/dados/sp/sp71072-c0005-e006259-u.json" => Http::response(tseOfficeResult(['250000000011' => ['101', 5], '250000000013' => ['555', 9]], seats: 2, time: '21:00:00')),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:sincronizar', ['--turno' => 1, '--sem-notificacao' => true])->assertSuccessful();
+
+    $ids = Candidate::query()->pluck('id', 'tse_sequence');
+    expect(Candidate::query()->where('tse_sequence', '250000000001')->sole())
+        ->office->toBe(Office::Governor)
+        ->state->toBe(State::SaoPaulo);
+    expect(Candidate::query()->where('tse_sequence', '250000000031')->sole())
+        ->office->toBe(Office::StateDeputy)
+        ->state->toBe(State::DistritoFederal);
+
+    $governor = Result::query()->forElection(6259, Office::Governor, Result::SCOPE_STATE)->sole();
+    expect($governor->elected_candidate_ids)->toBe([$ids['250000000001']])
+        ->and($governor->seats)->toBe(1);
+
+    $senate = Result::query()->forElection(6259, Office::Senator, Result::SCOPE_STATE)->sole();
+    expect($senate->elected_candidate_ids)->toBe([$ids['250000000011'], $ids['250000000012']])
+        ->and($senate->seats)->toBe(2);
+
+    $deputies = Result::query()->forElection(6259, Office::FederalDeputy, Result::SCOPE_STATE)->sole();
+    expect($deputies->elected_candidate_ids)->toBe([$ids['250000000021'], $ids['250000000022']])
+        ->and($deputies->seats)->toBe(70);
+
+    expect(Result::query()->forElection(6259, Office::Governor, Result::SCOPE_MUNICIPALITY)->sole()->leading_candidate_id)->toBe($ids['250000000002'])
+        ->and(Result::query()->forElection(6259, Office::Senator, Result::SCOPE_MUNICIPALITY)->sole()->leading_candidate_id)->toBe($ids['250000000013'])
+        ->and(Result::query()->forElection(6259, Office::FederalDeputy, Result::SCOPE_MUNICIPALITY)->exists())->toBeFalse();
+
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'sp71072-c0006'));
+});
+
+test('the governor runoff is only requested where nobody was elected in the first round', function () {
+    Http::preventStrayRequests();
+    fakeTse();
+    $candidate = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    foreach (['sp' => [$candidate->id], 'df' => null] as $state => $elected) {
+        Result::create([
+            'election_code' => 6259, 'office' => Office::Governor, 'scope' => Result::SCOPE_STATE, 'scope_code' => $state,
+            'votes' => [$candidate->id => 10], 'elected_candidate_ids' => $elected,
+        ]);
+    }
+
+    $this->artisan('tse:sincronizar', ['--turno' => 2, '--sem-notificacao' => true])->assertSuccessful();
+
+    $runoffRequests = Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/6260/'))
+        ->map(fn (array $pair): string => basename($pair[0]->url()))
+        ->sort()
+        ->values()
+        ->all();
+    expect($runoffRequests)->toBe(['df-c0003-e006260-u.json', 'df-e006260-ab.json']);
+});
+
+test('a 429 pauses every request to the TSE instead of insisting', function () {
+    Http::preventStrayRequests();
+    fakeTse(overrides: [TSE_BASE.'/dados/sp/sp-c0001-e006258-u.json' => Http::response('', 429)]);
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])
+        ->expectsOutputToContain('O TSE limitou as requisições (HTTP 429)')
+        ->assertFailed();
+    $requests = Http::recorded()->count();
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertFailed();
+    expect(Http::recorded())->toHaveCount($requests);
+
+    // Blocked again right after the pause: the next pause is twice as long.
+    $this->travel(301)->seconds();
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertFailed();
+    expect(Http::recorded()->count())->toBeGreaterThan($requests);
+    expect(app(TseClient::class)->pausedUntil()?->getTimestamp())->toBe(now()->addSeconds(600)->getTimestamp());
+});
+
+test('an election whose results are all final is not downloaded again', function () {
+    Http::preventStrayRequests();
+    $final = fn (array $result): array => [...$result, 'and' => 'f'];
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response($final(tseResult(['280002551544' => 600, '280002542548' => 400]))),
+        TSE_BASE.'/dados/sp/sp-c0001-e006258-u.json' => Http::response($final(tseResult(['280002551544' => 300, '280002542548' => 200]))),
+    ]);
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
+    $requests = fn (): int => Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/6258/'))->count();
+    $afterFirstSync = $requests();
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])
+        ->expectsOutputToContain('Eleição 6258 já concluída')
+        ->assertSuccessful();
+    expect($requests())->toBe($afterFirstSync);
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true, '--completo' => true])->assertSuccessful();
+    expect($requests())->toBeGreaterThan($afterFirstSync);
+});
+
+test('an election with failed downloads is not complete', function () {
+    Http::preventStrayRequests();
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response([...tseResult(['280002551544' => 600]), 'and' => 'f']),
+        TSE_BASE.'/dados/sp/sp-c0001-e006258-u.json' => Http::response('', 500),
+    ]);
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
+
+    expect(ResultSynchronizer::isComplete(6258))->toBeFalse();
+});
+
+test('a photo blocked by a 429 is retried later instead of marked as missing', function () {
+    Http::preventStrayRequests();
+    Storage::fake();
+    Http::fakeSequence('resultados.tse.jus.br/*')
+        ->push('', 429)
+        ->push("\xFF\xD8\xFF\xE0fake-jpeg");
+    $candidate = Candidate::factory()->create();
+
+    $this->get(route('candidates.photo', $candidate))->assertServiceUnavailable()->assertHeader('Retry-After');
+    $this->get(route('candidates.photo', $candidate))->assertServiceUnavailable();
+    Http::assertSentCount(1);
+
+    $this->travel(301)->seconds();
+    $this->get(route('candidates.photo', $candidate))->assertOk();
+});
+
+test('the photos command downloads every missing photo and stops on a 429', function () {
+    Http::preventStrayRequests();
+    Storage::fake();
+    [$first, $second] = Candidate::factory()->count(2)->create();
+    $deputy = Candidate::factory()->running(Office::FederalDeputy, State::SaoPaulo)->create();
+    Storage::put(Candidate::photoPath($first->tse_sequence), 'stored');
+    Http::fake([
+        "*/6257/fotos/br/{$second->tse_sequence}.jpeg" => Http::response("\xFF\xD8\xFF\xE0fake-jpeg"),
+        "*/6259/fotos/sp/{$deputy->tse_sequence}.jpeg" => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:fotos')
+        ->expectsOutputToContain('1 fotos baixadas, 1 sem foto no TSE, 0 falharam')
+        ->assertSuccessful();
+
+    Storage::assertExists(Candidate::photoPath($second->tse_sequence));
+    Http::assertSentCount(2);
+
+    $this->artisan('tse:fotos')->expectsOutputToContain('Todas as fotos já foram baixadas.')->assertSuccessful();
+
+    $governor = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    Http::fake(["*/6259/fotos/sp/{$governor->tse_sequence}.jpeg" => Http::response('', 429)]);
+
+    $this->artisan('tse:fotos', ['--cargo' => ['governador'], '--sem-espera' => true])
+        ->expectsOutputToContain('O TSE limitou as requisições (HTTP 429)')
+        ->assertFailed();
+});
+
+test('the photos command waits for the pause after a 429 and continues', function () {
+    Http::preventStrayRequests();
+    Storage::fake();
+    Sleep::fake(syncWithCarbon: true);
+    $candidate = Candidate::factory()->create();
+    Http::fakeSequence('resultados.tse.jus.br/*')
+        ->push('', 429)
+        ->push("\xFF\xD8\xFF\xE0fake-jpeg");
+
+    $this->artisan('tse:fotos')
+        ->expectsOutputToContain('Aguardando para continuar')
+        ->expectsOutputToContain('1 fotos baixadas')
+        ->assertSuccessful();
+
+    Storage::assertExists(Candidate::photoPath($candidate->tse_sequence));
+    Sleep::assertSleptTimes(1);
 });

@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\Office;
+use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\WebPush;
 use Illuminate\Console\Attributes\Description;
@@ -10,9 +12,9 @@ use Illuminate\Console\Command;
 
 #[Signature('tse:sincronizar
     {--turno= : Turno a sincronizar (padrão: turno ativo)}
-    {--completo : Rebaixa todos os municípios, mesmo os que não mudaram}
+    {--completo : Rebaixa tudo, mesmo eleições concluídas e municípios que não mudaram}
     {--sem-notificacao : Não envia notificações push}')]
-#[Description('Sincroniza os resultados de presidente a partir da divulgação do TSE')]
+#[Description('Sincroniza os resultados de todos os cargos a partir da divulgação do TSE')]
 class SyncElectionResults extends Command
 {
     /**
@@ -21,27 +23,51 @@ class SyncElectionResults extends Command
     public function handle(ResultSynchronizer $synchronizer, WebPush $webPush): int
     {
         $round = (int) ($this->option('turno') ?: config('eleicoes.turno_ativo'));
-        $electionCode = config("eleicoes.turnos.{$round}");
 
-        if ($electionCode === null) {
+        // Offices grouped by the TSE election that holds them.
+        $elections = collect(Office::forRound($round))
+            ->groupBy(fn (Office $office): int => (int) $office->electionCode($round))
+            ->reject(fn ($offices, int $electionCode): bool => $electionCode === 0);
+
+        if ($elections->isEmpty()) {
             $this->components->error("Turno {$round} não configurado.");
 
             return self::FAILURE;
         }
 
-        $started = microtime(true);
-        $totals = $synchronizer->sync((int) $electionCode, (bool) $this->option('completo'));
+        $countryChanged = false;
 
-        $this->components->info(sprintf(
-            '%dº turno: %s%% das seções apuradas. %d estados e %d municípios atualizados em %.1fs.',
-            $round,
-            number_format($totals['counted_percent'], 2, ',', '.'),
-            $totals['states'],
-            $totals['municipalities'],
-            microtime(true) - $started,
-        ));
+        foreach ($elections as $electionCode => $offices) {
+            if (! $this->option('completo') && ResultSynchronizer::isComplete($electionCode)) {
+                $this->components->info("Eleição {$electionCode} já concluída e sincronizada; nada a baixar.");
 
-        if ($totals['country_changed'] && ! $this->option('sem-notificacao')) {
+                continue;
+            }
+
+            $started = microtime(true);
+
+            try {
+                $totals = $synchronizer->sync($electionCode, $offices->all(), (bool) $this->option('completo'));
+            } catch (RateLimitedException $exception) {
+                $this->components->warn($exception->getMessage());
+
+                return self::FAILURE;
+            }
+
+            $countryChanged = $countryChanged || $totals['country_changed'];
+
+            $this->components->info(sprintf(
+                '%dº turno, %s%s: %d resultados estaduais e %d municipais atualizados em %.1fs.',
+                $round,
+                $offices->map(fn (Office $office): string => $office->label())->join(', ', ' e '),
+                $totals['counted_percent'] === null ? '' : ' ('.number_format($totals['counted_percent'], 2, ',', '.').'% das seções apuradas)',
+                $totals['states'],
+                $totals['municipalities'],
+                microtime(true) - $started,
+            ));
+        }
+
+        if ($countryChanged && ! $this->option('sem-notificacao')) {
             $delivered = $webPush->broadcast();
 
             if ($delivered > 0) {

@@ -1,14 +1,25 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/layouts/admin-layout';
 import { contrastText } from '@/lib/format';
-import { update } from '@/routes/admin/candidates';
-import type { Candidate } from '@/types';
+import { cn } from '@/lib/utils';
+import { index, update } from '@/routes/admin/candidates';
+import type { Candidate, OfficeOption } from '@/types';
 
 type Props = {
+    office: string;
+    offices: OfficeOption[];
+    state: string | null;
+    states: OfficeOption[];
     candidates: (Candidate & { custom_color: string | null })[];
 };
 
-export default function CandidatesIndex({ candidates }: Props) {
+export default function CandidatesIndex({
+    office,
+    offices,
+    state,
+    states,
+    candidates,
+}: Props) {
     return (
         <AdminLayout title="Cores dos candidatos">
             <Head title="Candidatos" />
@@ -18,6 +29,53 @@ export default function CandidatesIndex({ candidates }: Props) {
                 Candidatos aparecem aqui após a primeira sincronização com o TSE
                 (<code>php artisan tse:sincronizar</code>).
             </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+                {offices.map((option) => (
+                    <Link
+                        key={option.value}
+                        href={index({
+                            query: {
+                                cargo: option.value,
+                                ...(state && { uf: state }),
+                            },
+                        })}
+                        preserveScroll
+                        className={cn(
+                            'rounded-lg px-3 py-1.5 text-sm font-medium',
+                            option.value === office
+                                ? 'bg-emerald-600 text-white'
+                                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                        )}
+                    >
+                        {option.label}
+                    </Link>
+                ))}
+                {states.length > 0 && (
+                    <select
+                        value={state ?? ''}
+                        onChange={(event) =>
+                            router.visit(
+                                index({
+                                    query: {
+                                        cargo: office,
+                                        uf: event.target.value,
+                                    },
+                                }),
+                                { preserveScroll: true },
+                            )
+                        }
+                        aria-label="Estado"
+                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                        {states.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </div>
 
             {candidates.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">

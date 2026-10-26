@@ -13,10 +13,23 @@ type Props = {
     results: MapResults | undefined;
     candidates: Map<number, Candidate>;
     selectedState: string;
+    /** State offices: only the municipalities of the selected state. */
+    restrictToState?: boolean;
     onSelect: (ibge: string) => void;
 };
 
 const MIN_ZOOM_WIDTH = 8;
+
+function padded([x, y, w, h]: [number, number, number, number]): ViewBox {
+    const padding = Math.max(w, h) * 0.08;
+
+    return {
+        x: x - padding,
+        y: y - padding,
+        w: w + padding * 2,
+        h: h + padding * 2,
+    };
+}
 
 /**
  * Leader share (40% → 80%) mapped to fill opacity, so landslides look darker.
@@ -31,6 +44,7 @@ export default function ResultsMap({
     results,
     candidates,
     selectedState,
+    restrictToState = false,
     onSelect,
 }: Props) {
     const [geometry, setGeometry] = useState<MapGeometry | null>(null);
@@ -67,9 +81,12 @@ export default function ResultsMap({
         };
     }, []);
 
-    const fullView: ViewBox | null = geometry
-        ? { x: 0, y: 0, w: geometry.width, h: geometry.height }
-        : null;
+    const selectedBox = geometry?.states[selectedState]?.bbox;
+    const fullView: ViewBox | null = !geometry
+        ? null
+        : restrictToState && selectedBox
+          ? padded(selectedBox)
+          : { x: 0, y: 0, w: geometry.width, h: geometry.height };
 
     useEffect(() => {
         if (!geometry) {
@@ -78,21 +95,11 @@ export default function ResultsMap({
 
         const state = selectedState ? geometry.states[selectedState] : null;
 
-        if (!state) {
-            setViewBox({ x: 0, y: 0, w: geometry.width, h: geometry.height });
-
-            return;
-        }
-
-        const [x, y, w, h] = state.bbox;
-        const padding = Math.max(w, h) * 0.08;
-
-        setViewBox({
-            x: x - padding,
-            y: y - padding,
-            w: w + padding * 2,
-            h: h + padding * 2,
-        });
+        setViewBox(
+            state
+                ? padded(state.bbox)
+                : { x: 0, y: 0, w: geometry.width, h: geometry.height },
+        );
     }, [geometry, selectedState]);
 
     // Wheel zoom needs a non-passive listener to prevent page scrolling.
@@ -294,11 +301,20 @@ export default function ResultsMap({
                 onPointerCancel={onPointerUp}
                 onPointerLeave={() => setHover(null)}
                 role="img"
-                aria-label="Mapa do Brasil com o candidato mais votado em cada município"
+                aria-label={
+                    restrictToState
+                        ? 'Mapa do estado com o candidato mais votado em cada município'
+                        : 'Mapa do Brasil com o candidato mais votado em cada município'
+                }
             >
                 <g>
-                    {Object.entries(geometry.municipalities).map(
-                        ([ibge, d]) => {
+                    {Object.entries(geometry.municipalities)
+                        .filter(
+                            ([ibge]) =>
+                                !restrictToState ||
+                                geometry.names[ibge]?.[1] === selectedState,
+                        )
+                        .map(([ibge, d]) => {
                             const result = results?.[ibge];
                             const leader =
                                 result?.[0] != null
@@ -327,24 +343,28 @@ export default function ResultsMap({
                                     vectorEffect="non-scaling-stroke"
                                 />
                             );
-                        },
-                    )}
+                        })}
                 </g>
                 <g className="pointer-events-none">
-                    {Object.entries(geometry.states).map(([code, state]) => (
-                        <path
-                            key={code}
-                            d={state.d}
-                            fill="none"
-                            className={cn(
-                                'stroke-zinc-700 dark:stroke-zinc-300',
-                                selectedState === code &&
-                                    'stroke-zinc-950 dark:stroke-white',
-                            )}
-                            strokeWidth={selectedState === code ? 2 : 0.8}
-                            vectorEffect="non-scaling-stroke"
-                        />
-                    ))}
+                    {Object.entries(geometry.states)
+                        .filter(
+                            ([code]) =>
+                                !restrictToState || code === selectedState,
+                        )
+                        .map(([code, state]) => (
+                            <path
+                                key={code}
+                                d={state.d}
+                                fill="none"
+                                className={cn(
+                                    'stroke-zinc-700 dark:stroke-zinc-300',
+                                    selectedState === code &&
+                                        'stroke-zinc-950 dark:stroke-white',
+                                )}
+                                strokeWidth={selectedState === code ? 2 : 0.8}
+                                vectorEffect="non-scaling-stroke"
+                            />
+                        ))}
                 </g>
             </svg>
 
@@ -362,7 +382,9 @@ export default function ResultsMap({
                     },
                     {
                         label: '⟲',
-                        title: 'Ver o Brasil inteiro',
+                        title: restrictToState
+                            ? 'Ver o estado inteiro'
+                            : 'Ver o Brasil inteiro',
                         action: () => fullView && setViewBox(fullView),
                     },
                 ].map((button) => (

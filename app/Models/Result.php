@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Office;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $election_code
+ * @property Office $office
  * @property string $scope
  * @property string $scope_code
  * @property int $sections_total
@@ -24,17 +26,18 @@ use Illuminate\Support\Carbon;
  * @property int $blank_votes
  * @property int $null_votes
  * @property array<int|string, int> $votes
+ * @property int $seats
  * @property int|null $leading_candidate_id
- * @property int|null $elected_candidate_id
+ * @property list<int>|null $elected_candidate_ids
  * @property bool $is_final
  * @property Carbon|null $tse_updated_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'election_code', 'scope', 'scope_code', 'sections_total', 'sections_counted', 'counted_percent',
+    'election_code', 'office', 'scope', 'scope_code', 'sections_total', 'sections_counted', 'counted_percent',
     'electorate', 'electorate_counted', 'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes',
-    'votes', 'leading_candidate_id', 'elected_candidate_id', 'is_final', 'tse_updated_at',
+    'votes', 'seats', 'leading_candidate_id', 'elected_candidate_ids', 'is_final', 'tse_updated_at',
 ])]
 class Result extends Model
 {
@@ -52,8 +55,10 @@ class Result extends Model
     protected function casts(): array
     {
         return [
+            'office' => Office::class,
             'counted_percent' => 'float',
             'votes' => 'array',
+            'elected_candidate_ids' => 'array',
             'is_final' => 'boolean',
             'tse_updated_at' => 'datetime',
         ];
@@ -70,9 +75,9 @@ class Result extends Model
     /**
      * @param  Builder<Result>  $query
      */
-    public function scopeForElection(Builder $query, int $electionCode, string $scope): void
+    public function scopeForElection(Builder $query, int $electionCode, Office $office, string $scope): void
     {
-        $query->where('election_code', $electionCode)->where('scope', $scope);
+        $query->where('election_code', $electionCode)->where('office', $office)->where('scope', $scope);
     }
 
     /**

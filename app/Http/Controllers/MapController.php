@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Office;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Services\MapGeometryBuilder;
@@ -53,11 +54,15 @@ class MapController extends Controller
     {
         $request->validate([
             'turno' => ['nullable', Rule::in(ResultsPresenter::rounds())],
+            'cargo' => ['nullable', Rule::enum(Office::class)],
         ]);
 
-        $electionCode = ResultsPresenter::electionCode($request->integer('turno', (int) config('eleicoes.turno_ativo')));
+        $office = $request->enum('cargo', Office::class) ?? Office::President;
+        $electionCode = $office->electionCode($request->integer('turno', (int) config('eleicoes.turno_ativo')));
 
-        $result = $presenter->municipality($electionCode, $municipality);
+        abort_if($electionCode === null || ! $office->hasMunicipalityResults(), 404);
+
+        $result = $presenter->municipality($electionCode, $office, $municipality);
 
         return response()->json([
             'name' => $municipality->name,
