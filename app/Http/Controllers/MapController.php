@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\Office;
-use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Services\MapGeometryBuilder;
 use App\Services\ResultsPresenter;
@@ -63,16 +62,19 @@ class MapController extends Controller
         abort_if($electionCode === null || ! $office->hasMunicipalityResults(), 404);
 
         $result = $presenter->municipality($electionCode, $office, $municipality);
+        $ids = array_column($result['results'] ?? [], 'candidate_id');
+        // The colors of the race where the office is elected, as on the map.
+        $place = $presenter->summary($electionCode, $office, $office->isNationwide() ? null : $municipality->state);
 
         return response()->json([
             'name' => $municipality->name,
             'state' => $municipality->state->abbreviation(),
             'is_capital' => $municipality->is_capital,
             'result' => $result,
-            'candidates' => Candidate::query()
-                ->whereKey(array_column($result['results'] ?? [], 'candidate_id'))
-                ->get()
-                ->map(fn (Candidate $candidate): array => $candidate->toPublicArray()),
+            'candidates' => array_values(array_filter(
+                $presenter->publicCandidates($place ?? $result, $office),
+                fn (array $candidate): bool => in_array($candidate['id'], $ids, true),
+            )),
         ]);
     }
 }

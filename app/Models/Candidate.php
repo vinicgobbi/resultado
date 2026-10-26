@@ -72,17 +72,28 @@ class Candidate extends Model
     }
 
     /**
-     * The color shown on charts and on the map.
+     * The color shown on charts and on the map: the one chosen in the admin,
+     * otherwise an approximation of the party color, otherwise the palette.
      */
     public function displayColor(): string
     {
-        return $this->color ?? self::FALLBACK_COLORS[$this->id % count(self::FALLBACK_COLORS)];
+        return $this->color ?? $this->partyColor() ?? self::FALLBACK_COLORS[$this->id % count(self::FALLBACK_COLORS)];
+    }
+
+    /**
+     * Approximate color of the party, from config/partidos.php.
+     */
+    public function partyColor(): ?string
+    {
+        $color = config('partidos.cores.'.mb_strtoupper(trim($this->party)));
+
+        return is_string($color) ? strtolower($color) : null;
     }
 
     /**
      * @return array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string}
      */
-    public function toPublicArray(): array
+    public function toPublicArray(?string $color = null): array
     {
         return [
             'id' => $this->id,
@@ -90,7 +101,7 @@ class Candidate extends Model
             'name' => $this->ballot_name,
             'full_name' => $this->full_name,
             'party' => $this->party,
-            'color' => $this->displayColor(),
+            'color' => $color ?? $this->displayColor(),
             'photo_url' => route('candidates.photo', $this),
         ];
     }

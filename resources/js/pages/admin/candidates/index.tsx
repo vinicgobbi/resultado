@@ -10,7 +10,10 @@ type Props = {
     offices: OfficeOption[];
     state: string | null;
     states: OfficeOption[];
-    candidates: (Candidate & { custom_color: string | null })[];
+    candidates: (Candidate & {
+        custom_color: string | null;
+        party_color: string | null;
+    })[];
 };
 
 export default function CandidatesIndex({
@@ -25,9 +28,11 @@ export default function CandidatesIndex({
             <Head title="Candidatos" />
 
             <p className="text-sm text-zinc-500">
-                As cores são usadas nos gráficos e no mapa de municípios.
-                Candidatos aparecem aqui após a primeira sincronização com o TSE
-                (<code>php artisan tse:sincronizar</code>).
+                As cores são usadas nos gráficos e no mapa de municípios. Sem
+                uma cor escolhida aqui, o candidato usa a cor aproximada do
+                partido (config/partidos.php) ou uma cor automática. Candidatos
+                aparecem aqui após a primeira sincronização com o TSE (
+                <code>php artisan tse:sincronizar</code>).
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -112,7 +117,9 @@ export default function CandidatesIndex({
                                                 {candidate.full_name} ·{' '}
                                                 {candidate.party}
                                                 {!candidate.custom_color &&
-                                                    ' · cor automática'}
+                                                    (candidate.party_color
+                                                        ? ' · cor do partido'
+                                                        : ' · cor automática')}
                                             </p>
                                             {errors.color && (
                                                 <p className="text-xs text-red-600">

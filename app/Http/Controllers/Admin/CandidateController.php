@@ -45,6 +45,7 @@ class CandidateController extends Controller
                 ->map(fn (Candidate $candidate): array => [
                     ...$candidate->toPublicArray(),
                     'custom_color' => $candidate->color,
+                    'party_color' => $candidate->partyColor(),
                 ]),
             'activeRound' => (int) config('eleicoes.turno_ativo'),
             'rounds' => ResultsPresenter::rounds(),

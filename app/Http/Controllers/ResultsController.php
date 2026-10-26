@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\Office;
 use App\Enums\State;
-use App\Models\Candidate;
 use App\Services\MapGeometryBuilder;
 use App\Services\ResultsPresenter;
 use Illuminate\Http\JsonResponse;
@@ -40,9 +39,7 @@ class ResultsController extends Controller
                 ->values(),
             'state' => $state?->abbreviation(),
             'places' => $places,
-            'candidates' => $this->presenter->candidates($summary)
-                ->map(fn (Candidate $candidate): array => $candidate->toPublicArray())
-                ->values(),
+            'candidates' => $this->presenter->publicCandidates($summary, $office),
             'summary' => $summary,
             'states' => $office->isNationwide() ? $this->presenter->states($electionCode, $office) : [],
             'mapAvailable' => $office->hasMunicipalityResults() && Storage::exists(MapGeometryBuilder::PATH),

@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class ResultsPresenter
 {
+    public function __construct(private readonly CandidateColors $colors) {}
+
     /**
      * @return list<int>
      */
@@ -44,6 +46,28 @@ class ResultsPresenter
         $ids = array_column($result['results'] ?? [], 'candidate_id');
 
         return Candidate::query()->whereKey($ids)->get()->keyBy('id');
+    }
+
+    /**
+     * Public data of the candidates of a result, most voted first. In
+     * majority races similar colors get distinct shades; deputies keep the
+     * party color, which is what tells their parties apart.
+     *
+     * @param  array{results: list<CandidateVotes>}|null  $result
+     * @return list<array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string}>
+     */
+    public function publicCandidates(?array $result, Office $office): array
+    {
+        $candidates = $this->candidates($result);
+        $ordered = collect($result['results'] ?? [])
+            ->map(fn (array $votes): ?Candidate => $candidates->get($votes['candidate_id']))
+            ->filter()
+            ->values();
+        $colors = $office->isProportional() ? [] : $this->colors->assign($ordered);
+
+        return $ordered
+            ->map(fn (Candidate $candidate): array => $candidate->toPublicArray($colors[$candidate->id] ?? null))
+            ->all();
     }
 
     /**

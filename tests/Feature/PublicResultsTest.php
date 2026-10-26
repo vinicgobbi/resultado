@@ -268,3 +268,39 @@ test('deputies are only elected by the TSE and have no map', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->where('summary.winners', [['candidate_id' => $elected->id, 'status' => 'elected']]));
 });
+
+test('candidates take the color of their party', function () {
+    $candidate = Candidate::factory()->create(['party' => 'NOVO']);
+    $unknown = Candidate::factory()->create(['party' => 'PARTIDO NOVÍSSIMO']);
+
+    expect($candidate->displayColor())->toBe('#f47920')
+        ->and($unknown->displayColor())->toBe(Candidate::FALLBACK_COLORS[$unknown->id % count(Candidate::FALLBACK_COLORS)]);
+});
+
+test('similar party colors in a race get distinct shades, keeping admin colors', function () {
+    // PT and PDT are both red; PCdoB too, but its color was chosen in the admin.
+    [$first, $second] = [
+        Candidate::factory()->create(['party' => 'PT']),
+        Candidate::factory()->create(['party' => 'PDT']),
+    ];
+    $custom = Candidate::factory()->create(['party' => 'PCDOB', 'color' => '#c4161c']);
+    storeCountry([$first->id => 500, $second->id => 300, $custom->id => 200]);
+
+    $this->get(route('home'))->assertInertia(function (Assert $page) use ($first, $custom) {
+        $colors = collect($page->toArray()['props']['candidates'])->pluck('color', 'id');
+
+        expect($colors[$first->id])->toBe('#c4161c')
+            ->and($colors[$custom->id])->toBe('#c4161c')
+            ->and($colors->unique())->toHaveCount(2);
+    });
+});
+
+test('deputies keep the color of their party', function () {
+    [$first, $second] = Candidate::factory()->count(2)->running(Office::FederalDeputy, State::SaoPaulo)->create(['party' => 'PT']);
+    storeStateResult(Office::FederalDeputy, 'sp', [$first->id => 500, $second->id => 300]);
+
+    $this->get(route('home', ['turno' => 1, 'cargo' => 'deputado-federal', 'uf' => 'sp']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('candidates.0.color', '#c4161c')
+            ->where('candidates.1.color', '#c4161c'));
+});
