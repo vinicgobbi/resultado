@@ -77,7 +77,7 @@ export default function ResultsIndex({
                     <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4">
                         <div className="flex items-center gap-3">
                             <img
-                                src="/icons/icon-192.png"
+                                src="/app-icons/icon-192.png"
                                 alt=""
                                 className="size-9 rounded-lg"
                             />

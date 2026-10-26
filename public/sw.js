@@ -1,6 +1,6 @@
 /* Service worker: PWA install, offline-friendly assets and push notifications. */
 
-const STATIC_CACHE = 'eleicoes-static-v1';
+const STATIC_CACHE = 'eleicoes-static-v2';
 const MAP_CACHE = 'eleicoes-mapa-v1';
 
 self.addEventListener('install', () => {
@@ -35,7 +35,7 @@ self.addEventListener('fetch', (event) => {
     // Hashed build assets and icons never change: cache first.
     if (
         url.pathname.startsWith('/build/') ||
-        url.pathname.startsWith('/icons/')
+        url.pathname.startsWith('/app-icons/')
     ) {
         event.respondWith(
             caches.open(STATIC_CACHE).then(async (cache) => {
@@ -101,8 +101,8 @@ self.addEventListener('push', (event) => {
 
                 return self.registration.showNotification(title, {
                     body: leaders || 'Novos resultados disponíveis.',
-                    icon: '/icons/icon-192.png',
-                    badge: '/icons/icon-192.png',
+                    icon: '/app-icons/icon-192.png',
+                    badge: '/app-icons/icon-192.png',
                     tag: 'apuracao-brasil',
                     renotify: true,
                     data: { url: '/' },
@@ -111,7 +111,7 @@ self.addEventListener('push', (event) => {
             .catch(() =>
                 self.registration.showNotification('Eleições 2026', {
                     body: 'O TSE publicou novos resultados.',
-                    icon: '/icons/icon-192.png',
+                    icon: '/app-icons/icon-192.png',
                     tag: 'apuracao-brasil',
                     data: { url: '/' },
                 }),

@@ -117,6 +117,17 @@ test('sync only downloads municipalities updated since the last run', function (
     expect(municipalityFileRequests())->toBe(2);
 });
 
+test('sync completes a partial municipality import', function () {
+    Http::preventStrayRequests();
+    // As left by an import interrupted after its first chunk.
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    fakeTse();
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(Municipality::query()->pluck('tse_code')->sort()->values()->all())->toBe(['29254', '61000', '71072']);
+});
+
 test('sync keeps admin colors when candidates are refreshed', function () {
     Http::preventStrayRequests();
     Candidate::factory()->create(['tse_sequence' => '280002542548', 'number' => 13, 'color' => '#ff0000']);

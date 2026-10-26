@@ -96,9 +96,13 @@ class ResultSynchronizer
             }
         }
 
-        foreach (array_chunk($rows, 500) as $chunk) {
-            Municipality::query()->upsert($chunk, ['tse_code'], ['ibge_code', 'state', 'name', 'is_capital', 'updated_at']);
-        }
+        // All or nothing: a partial import would never be completed, since
+        // the import only runs again when municipalities are missing.
+        DB::transaction(function () use ($rows): void {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                Municipality::query()->upsert($chunk, ['tse_code'], ['ibge_code', 'state', 'name', 'is_capital', 'updated_at']);
+            }
+        });
 
         return count($rows);
     }
@@ -121,7 +125,11 @@ class ResultSynchronizer
 
     private function syncMunicipalities(int $electionCode, bool $full): int
     {
-        $outdated = $this->outdatedMunicipalities($electionCode, $full);
+        [$outdated, $reported] = $this->outdatedMunicipalities($electionCode, $full);
+
+        if (Municipality::query()->count() < count($reported)) {
+            $this->importMunicipalities($electionCode);
+        }
         $synced = 0;
 
         foreach (array_chunk($outdated, 300, preserve_keys: true) as $chunk) {
@@ -145,9 +153,10 @@ class ResultSynchronizer
     }
 
     /**
-     * Municipalities whose stored result is older than what the TSE reports.
+     * Municipalities whose stored result is older than what the TSE reports,
+     * and every municipality code the TSE reports.
      *
-     * @return array<string, State> keyed by TSE municipality code
+     * @return array{0: array<string, State>, 1: list<string>}
      */
     private function outdatedMunicipalities(int $electionCode, bool $full): array
     {
@@ -161,6 +170,7 @@ class ResultSynchronizer
             ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'));
 
         $outdated = [];
+        $reported = [];
 
         foreach ($this->client->fetchMany($urls) as $uf => $progress) {
             foreach ($progress['abr'] ?? [] as $municipality) {
@@ -169,6 +179,7 @@ class ResultSynchronizer
                 }
 
                 $tseCode = (string) $municipality['cdabr'];
+                $reported[] = $tseCode;
                 $sectionsCounted = (int) ($municipality['s']['st'] ?? 0);
                 $updatedAt = ResultPayload::dateTime($municipality['dt'] ?? null, $municipality['ht'] ?? null)?->format('Y-m-d H:i:s');
 
@@ -182,7 +193,7 @@ class ResultSynchronizer
             }
         }
 
-        return $outdated;
+        return [$outdated, $reported];
     }
 
     private function storeCandidates(ResultPayload $payload): void
