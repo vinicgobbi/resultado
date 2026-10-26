@@ -53,7 +53,7 @@ export default function AdminLayout({
                         >
                             Ver site
                         </Link>
-                        <span className="hidden text-zinc-400 sm:inline">
+                        <span className="hidden text-zinc-500 sm:inline dark:text-zinc-400">
                             {auth.user?.name}
                         </span>
                         <Link

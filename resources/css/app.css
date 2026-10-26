@@ -10,6 +10,21 @@
         'Noto Color Emoji';
 }
 
+@layer base {
+    /*
+     * Native controls (inputs, selects, scrollbars) follow the theme, and
+     * browsers do not apply their automatic darkening on top of ours.
+     */
+    :root {
+        color-scheme: light dark;
+    }
+
+    /* Anything without an explicit color inherits a readable one. */
+    body {
+        @apply bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100;
+    }
+}
+
 @keyframes fade-in {
     from {
         opacity: 0;

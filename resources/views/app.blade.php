@@ -9,6 +9,7 @@
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
         <link rel="manifest" href="/manifest.webmanifest">
         <meta name="theme-color" content="#009739">
+        <meta name="color-scheme" content="light dark">
         <meta name="mobile-web-app-capable" content="yes">
 
         @fonts

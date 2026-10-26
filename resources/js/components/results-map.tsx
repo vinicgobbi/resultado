@@ -418,7 +418,9 @@ export default function ResultsMap({
                             Sem votos apurados ainda
                         </p>
                     )}
-                    <p className="mt-1 text-zinc-400">Clique para detalhes</p>
+                    <p className="mt-1 text-zinc-500 dark:text-zinc-400">
+                        Clique para detalhes
+                    </p>
                 </div>
             )}
         </div>
