@@ -164,7 +164,11 @@ class ResultsPresenter
         $votes = $country->votes;
         $leaderVotes = $votes[$leaderId] ?? 0;
         $validVotes = max($country->valid_votes, array_sum($votes));
-        $votersLeft = max($country->electorate - $country->electorate_counted, 0);
+        // Voters in counted sections; turnout + abstentions is the same up to
+        // the few sections that were never installed (a safe overestimate of
+        // the voters left), and does not depend on a newer column.
+        $counted = (int) $country->electorate_counted ?: $country->turnout + $country->abstentions;
+        $votersLeft = max($country->electorate - $counted, 0);
 
         if (2 * $leaderVotes <= $validVotes + $votersLeft) {
             return null;

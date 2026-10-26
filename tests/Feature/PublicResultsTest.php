@@ -133,3 +133,12 @@ test('the candidate elected by the TSE is the winner', function () {
 
     $this->getJson(route('results.summary'))->assertJsonPath('winner', ['name' => $leader->ballot_name, 'status' => 'elected']);
 });
+
+test('the voters left fall back to turnout and abstentions', function () {
+    [$leader, $other] = Candidate::factory()->count(2)->create();
+    // Synced before electorate_counted existed: 1100 voters counted (1000 + 100).
+    storeCountry([$leader->id => 700, $other->id => 300], ['electorate_counted' => 0, 'turnout' => 1000, 'abstentions' => 100]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.winner', ['candidate_id' => $leader->id, 'status' => 'mathematical']));
+});
