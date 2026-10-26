@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 final readonly class ResultPayload
 {
     /**
-     * @param  list<array{tse_sequence: string, number: int, ballot_name: string, full_name: string, party: string, votes: int}>  $candidates
+     * @param  list<array{tse_sequence: string, number: int, ballot_name: string, full_name: string, party: string, votes: int, elected: bool}>  $candidates
      */
     public function __construct(
         public array $candidates,
@@ -18,6 +18,7 @@ final readonly class ResultPayload
         public int $sectionsCounted,
         public float $countedPercent,
         public int $electorate,
+        public int $electorateCounted,
         public int $turnout,
         public int $abstentions,
         public int $validVotes,
@@ -45,6 +46,9 @@ final readonly class ResultPayload
                             'full_name' => (string) $candidate['nm'],
                             'party' => (string) ($party['sg'] ?? ''),
                             'votes' => (int) ($candidate['vap'] ?? 0),
+                            // "e" is also "s" for who goes to the runoff;
+                            // "st" is "Eleito" only for the winner.
+                            'elected' => ($candidate['st'] ?? '') === 'Eleito',
                         ];
                     }
                 }
@@ -61,6 +65,7 @@ final readonly class ResultPayload
             sectionsCounted: (int) ($sections['st'] ?? 0),
             countedPercent: self::decimal($sections['pstn'] ?? $sections['pst'] ?? '0'),
             electorate: (int) ($electorate['te'] ?? 0),
+            electorateCounted: (int) ($electorate['est'] ?? 0),
             turnout: (int) ($electorate['c'] ?? 0),
             abstentions: (int) ($electorate['a'] ?? 0),
             validVotes: (int) ($votes['vv'] ?? 0),

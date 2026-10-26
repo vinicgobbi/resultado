@@ -1,10 +1,11 @@
 import { Head, Link, useHttp, usePoll } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CandidateResults from '@/components/candidate-results';
 import MunicipalityPanel from '@/components/municipality-panel';
 import NotificationToggle from '@/components/notification-toggle';
 import ResultsMap from '@/components/results-map';
 import StatesTable from '@/components/states-table';
+import WinnerCelebration from '@/components/winner-celebration';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { home } from '@/routes';
@@ -55,11 +56,24 @@ export default function ResultsIndex({
         candidates.map((candidate) => [candidate.id, candidate]),
     );
 
-    const leader = summary?.results[0];
-    const electedId =
-        summary?.is_final && leader && (round === 2 || leader.percent > 50)
-            ? leader.candidate_id
-            : null;
+    const winner = summary?.winner ?? null;
+    const winnerCandidate = winner
+        ? candidatesById.get(winner.candidate_id)
+        : undefined;
+    // Opens on load when there is a winner, and when one appears while the
+    // page is open (polling).
+    const [celebrating, setCelebrating] = useState(winner !== null);
+    const previousWinner = useRef(winner?.candidate_id ?? null);
+
+    useEffect(() => {
+        const current = winner?.candidate_id ?? null;
+
+        if (current !== null && current !== previousWinner.current) {
+            setCelebrating(true);
+        }
+
+        previousWinner.current = current;
+    }, [winner?.candidate_id]);
 
     function selectMunicipality(ibge: string) {
         setDetail(null);
@@ -165,7 +179,8 @@ export default function ResultsIndex({
                                     <CandidateResults
                                         results={summary.results}
                                         candidates={candidatesById}
-                                        electedId={electedId}
+                                        winner={winner}
+                                        onCelebrate={() => setCelebrating(true)}
                                     />
                                 </div>
 
@@ -294,6 +309,18 @@ export default function ResultsIndex({
                     segundos.
                 </footer>
             </div>
+
+            {celebrating && winner && winnerCandidate && (
+                <WinnerCelebration
+                    winner={winner}
+                    candidate={winnerCandidate}
+                    result={summary?.results.find(
+                        (result) => result.candidate_id === winner.candidate_id,
+                    )}
+                    round={round}
+                    onClose={() => setCelebrating(false)}
+                />
+            )}
         </>
     );
 }

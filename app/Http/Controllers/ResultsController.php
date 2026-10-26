@@ -55,6 +55,10 @@ class ResultsController extends Controller
             'counted_percent' => $summary['counted_percent'] ?? 0,
             'is_final' => $summary['is_final'] ?? false,
             'updated_at' => $summary['updated_at'] ?? null,
+            'winner' => isset($summary['winner']) ? [
+                'name' => $candidates->get($summary['winner']['candidate_id'])?->ballot_name,
+                'status' => $summary['winner']['status'],
+            ] : null,
             'candidates' => collect($summary['results'] ?? [])
                 ->take(4)
                 ->map(fn (array $result): array => [

@@ -68,6 +68,14 @@ class TseClient
     }
 
     /**
+     * Official photo of a candidate.
+     */
+    public function candidatePhotoUrl(int $electionCode, string $sequence): string
+    {
+        return $this->url($electionCode, "fotos/br/{$sequence}.jpeg");
+    }
+
+    /**
      * Counting progress (and last update time) of every municipality of a state.
      */
     public function stateProgressUrl(int $electionCode, State $state): string
@@ -135,6 +143,32 @@ class TseClient
         }
 
         return $results;
+    }
+
+    /**
+     * Download several binary files concurrently; failures come back as null.
+     *
+     * @param  array<string, string>  $urls
+     * @return array<string, string|null>
+     */
+    public function downloadMany(array $urls): array
+    {
+        if ($urls === []) {
+            return [];
+        }
+
+        $responses = Http::pool(fn (Pool $pool): array => collect($urls)
+            ->map(fn (string $url, string $key) => $pool->as($key)->connectTimeout(5)->timeout(30)->get($url))
+            ->values()
+            ->all(), concurrency: $this->concurrency);
+
+        return collect($urls)
+            ->mapWithKeys(function (string $url, string $key) use ($responses): array {
+                $response = $responses[$key] ?? null;
+
+                return [$key => $response instanceof Response && $response->successful() ? $response->body() : null];
+            })
+            ->all();
     }
 
     private function url(int $electionCode, string $path): string

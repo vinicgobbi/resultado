@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $sections_counted
  * @property float $counted_percent
  * @property int $electorate
+ * @property int $electorate_counted
  * @property int $turnout
  * @property int $abstentions
  * @property int $valid_votes
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int $null_votes
  * @property array<int|string, int> $votes
  * @property int|null $leading_candidate_id
+ * @property int|null $elected_candidate_id
  * @property bool $is_final
  * @property Carbon|null $tse_updated_at
  * @property Carbon|null $created_at
@@ -31,8 +33,8 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable([
     'election_code', 'scope', 'scope_code', 'sections_total', 'sections_counted', 'counted_percent',
-    'electorate', 'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes', 'votes',
-    'leading_candidate_id', 'is_final', 'tse_updated_at',
+    'electorate', 'electorate_counted', 'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes',
+    'votes', 'leading_candidate_id', 'elected_candidate_id', 'is_final', 'tse_updated_at',
 ])]
 class Result extends Model
 {

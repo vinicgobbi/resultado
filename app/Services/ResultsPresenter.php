@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Cache;
  * @phpstan-type FormattedResult array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
  * @phpstan-type StateResult array{code: string, name: string, counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>}
  * @phpstan-type MapEntry array{0: int|null, 1: float, 2: float}
+ * @phpstan-type Winner array{candidate_id: int, status: 'elected'|'mathematical'}
+ * @phpstan-type CountrySummary array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>, winner: Winner|null}
  */
 class ResultsPresenter
 {
@@ -49,7 +51,7 @@ class ResultsPresenter
     }
 
     /**
-     * @return FormattedResult|null
+     * @return CountrySummary|null
      */
     public function summary(int $electionCode): ?array
     {
@@ -92,7 +94,7 @@ class ResultsPresenter
     /**
      * Results cached until the next synchronization.
      *
-     * @return array{country: FormattedResult|null, states: list<StateResult>, map: array<string, MapEntry>}
+     * @return array{country: CountrySummary|null, states: list<StateResult>, map: array<string, MapEntry>}
      */
     private function data(int $electionCode): array
     {
@@ -132,11 +134,43 @@ class ResultsPresenter
                 ->all();
 
             return [
-                'country' => $country === null ? null : $this->format($country),
+                'country' => $country === null ? null : [...$this->format($country), 'winner' => $this->winner($country)],
                 'states' => $states,
                 'map' => $map,
             ];
         });
+    }
+
+    /**
+     * Who won, if anyone: officially elected by the TSE, or mathematically
+     * elected because even if every voter still to be counted voted validly
+     * against the leader, the leader would keep more than half of the valid
+     * votes (in the runoff: a lead larger than the voters left).
+     *
+     * @return Winner|null
+     */
+    private function winner(Result $country): ?array
+    {
+        if ($country->elected_candidate_id !== null) {
+            return ['candidate_id' => $country->elected_candidate_id, 'status' => 'elected'];
+        }
+
+        $leaderId = $country->leading_candidate_id;
+
+        if ($leaderId === null || $country->sections_counted === 0) {
+            return null;
+        }
+
+        $votes = $country->votes;
+        $leaderVotes = $votes[$leaderId] ?? 0;
+        $validVotes = max($country->valid_votes, array_sum($votes));
+        $votersLeft = max($country->electorate - $country->electorate_counted, 0);
+
+        if (2 * $leaderVotes <= $validVotes + $votersLeft) {
+            return null;
+        }
+
+        return ['candidate_id' => $leaderId, 'status' => $country->is_final ? 'elected' : 'mathematical'];
     }
 
     /**

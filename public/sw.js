@@ -95,9 +95,11 @@ self.addEventListener('push', (event) => {
                     )
                     .join(' × ');
 
-                const title = summary.is_final
-                    ? `Apuração encerrada (${summary.round}º turno)`
-                    : `${percent(summary.counted_percent)} das urnas apuradas`;
+                const title = summary.winner
+                    ? `🎉 ${summary.winner.name} ${summary.winner.status === 'elected' ? 'está eleito!' : 'está matematicamente eleito!'}`
+                    : summary.is_final
+                      ? `Apuração encerrada (${summary.round}º turno)`
+                      : `${percent(summary.counted_percent)} das urnas apuradas`;
 
                 return self.registration.showNotification(title, {
                     body: leaders || 'Novos resultados disponíveis.',

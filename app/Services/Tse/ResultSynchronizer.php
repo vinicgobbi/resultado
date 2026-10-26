@@ -9,6 +9,7 @@ use App\Models\Result;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Downloads presidential results from the TSE and stores them locally.
@@ -47,6 +48,7 @@ class ResultSynchronizer
             || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
 
         $this->storeCandidates($country);
+        $this->downloadPhotos($electionCode);
         $this->storeResults($electionCode, Result::SCOPE_COUNTRY, ['br' => $country]);
 
         $states = $this->syncStates($electionCode);
@@ -196,13 +198,33 @@ class ResultSynchronizer
         return [$outdated, $reported];
     }
 
+    /**
+     * Download, once, the official photo of each candidate that has none.
+     */
+    private function downloadPhotos(int $electionCode): void
+    {
+        $urls = Candidate::query()
+            ->get()
+            ->reject(fn (Candidate $candidate): bool => $candidate->hasPhoto())
+            ->mapWithKeys(fn (Candidate $candidate): array => [
+                $candidate->tse_sequence => $this->client->candidatePhotoUrl($electionCode, $candidate->tse_sequence),
+            ])
+            ->all();
+
+        foreach ($this->client->downloadMany($urls) as $sequence => $photo) {
+            if ($photo !== null && str_starts_with($photo, "\xFF\xD8")) {
+                Storage::put(Candidate::photoPath((string) $sequence), $photo);
+            }
+        }
+    }
+
     private function storeCandidates(ResultPayload $payload): void
     {
         $now = now();
 
         $rows = collect($payload->candidates)
             ->map(fn (array $candidate): array => [
-                ...collect($candidate)->except('votes')->all(),
+                ...collect($candidate)->except(['votes', 'elected'])->all(),
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
@@ -242,6 +264,7 @@ class ResultSynchronizer
 
             arsort($votes);
             $leaderId = array_key_first($votes);
+            $elected = collect($payload->candidates)->firstWhere('elected', true);
 
             $rows[] = [
                 'election_code' => $electionCode,
@@ -251,6 +274,7 @@ class ResultSynchronizer
                 'sections_counted' => $payload->sectionsCounted,
                 'counted_percent' => $payload->countedPercent,
                 'electorate' => $payload->electorate,
+                'electorate_counted' => $payload->electorateCounted,
                 'turnout' => $payload->turnout,
                 'abstentions' => $payload->abstentions,
                 'valid_votes' => $payload->validVotes,
@@ -258,6 +282,7 @@ class ResultSynchronizer
                 'null_votes' => $payload->nullVotes,
                 'votes' => json_encode((object) $votes, JSON_THROW_ON_ERROR),
                 'leading_candidate_id' => $leaderId !== null && $votes[$leaderId] > 0 ? $leaderId : null,
+                'elected_candidate_id' => $elected === null ? null : ($this->candidateIds[$elected['tse_sequence']] ?? null),
                 'is_final' => $payload->isFinal,
                 'tse_updated_at' => $payload->updatedAt?->format('Y-m-d H:i:s'),
                 'created_at' => $now,
@@ -268,9 +293,9 @@ class ResultSynchronizer
         DB::transaction(function () use ($rows): void {
             foreach (array_chunk($rows, 200) as $chunk) {
                 Result::query()->upsert($chunk, ['election_code', 'scope', 'scope_code'], [
-                    'sections_total', 'sections_counted', 'counted_percent', 'electorate', 'turnout',
-                    'abstentions', 'valid_votes', 'blank_votes', 'null_votes', 'votes',
-                    'leading_candidate_id', 'is_final', 'tse_updated_at', 'updated_at',
+                    'sections_total', 'sections_counted', 'counted_percent', 'electorate', 'electorate_counted',
+                    'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes', 'votes',
+                    'leading_candidate_id', 'elected_candidate_id', 'is_final', 'tse_updated_at', 'updated_at',
                 ]);
             }
         });

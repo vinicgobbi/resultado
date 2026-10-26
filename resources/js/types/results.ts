@@ -5,6 +5,13 @@ export type Candidate = {
     full_name: string;
     party: string;
     color: string;
+    photo_url: string | null;
+};
+
+export type Winner = {
+    candidate_id: number;
+    /** elected: declared by the TSE; mathematical: can no longer be caught. */
+    status: 'elected' | 'mathematical';
 };
 
 export type CandidateResult = {
@@ -27,6 +34,8 @@ export type ResultSummary = {
     leader_id: number | null;
     updated_at: string | null;
     results: CandidateResult[];
+    /** Only in the national summary. */
+    winner?: Winner | null;
 };
 
 export type StateResult = ResultSummary & {

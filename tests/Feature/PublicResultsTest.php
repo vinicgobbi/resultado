@@ -83,3 +83,53 @@ test('summary endpoint lists the leading candidates for notifications', function
         ->assertJsonPath('candidates.0.name', $first->ballot_name)
         ->assertJsonPath('candidates.1.percent', 25);
 });
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function storeCountry(array $votes, array $attributes = []): void
+{
+    arsort($votes);
+
+    Result::create([
+        'election_code' => 6258,
+        'scope' => Result::SCOPE_COUNTRY,
+        'scope_code' => 'br',
+        'sections_total' => 100,
+        'sections_counted' => 99,
+        'counted_percent' => 99,
+        'electorate' => 1200,
+        'electorate_counted' => 1100,
+        'valid_votes' => array_sum($votes),
+        'votes' => $votes,
+        'leading_candidate_id' => array_key_first($votes),
+        ...$attributes,
+    ]);
+}
+
+test('a leader that cannot be caught is mathematically elected', function () {
+    [$leader, $other] = Candidate::factory()->count(2)->create();
+    // 1000 valid votes and 100 voters left: 700 > (1000 + 100) / 2.
+    storeCountry([$leader->id => 700, $other->id => 300]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.winner', ['candidate_id' => $leader->id, 'status' => 'mathematical']));
+});
+
+test('a leader that can still be caught is not elected', function () {
+    [$leader, $other] = Candidate::factory()->count(2)->create();
+    // Lead of 40 votes with 100 voters left.
+    storeCountry([$leader->id => 520, $other->id => 480]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('summary.winner', null));
+});
+
+test('the candidate elected by the TSE is the winner', function () {
+    [$leader, $other] = Candidate::factory()->count(2)->create();
+    storeCountry([$leader->id => 520, $other->id => 480], ['elected_candidate_id' => $leader->id]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.winner', ['candidate_id' => $leader->id, 'status' => 'elected']));
+
+    $this->getJson(route('results.summary'))->assertJsonPath('winner', ['name' => $leader->ballot_name, 'status' => 'elected']);
+});

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -36,6 +37,19 @@ class Candidate extends Model
     ];
 
     /**
+     * Storage path of the official photo downloaded from the TSE.
+     */
+    public static function photoPath(string $sequence): string
+    {
+        return "candidatos/{$sequence}.jpeg";
+    }
+
+    public function hasPhoto(): bool
+    {
+        return Storage::exists(self::photoPath($this->tse_sequence));
+    }
+
+    /**
      * The color shown on charts and on the map.
      */
     public function displayColor(): string
@@ -44,7 +58,7 @@ class Candidate extends Model
     }
 
     /**
-     * @return array{id: int, number: int, name: string, full_name: string, party: string, color: string}
+     * @return array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string|null}
      */
     public function toPublicArray(): array
     {
@@ -55,6 +69,7 @@ class Candidate extends Model
             'full_name' => $this->full_name,
             'party' => $this->party,
             'color' => $this->displayColor(),
+            'photo_url' => $this->hasPhoto() ? route('candidates.photo', $this) : null,
         ];
     }
 }

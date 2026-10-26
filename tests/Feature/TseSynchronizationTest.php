@@ -7,6 +7,7 @@ use App\Models\Result;
 use App\Services\WebPush;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 const TSE_BASE = 'https://resultados.tse.jus.br/oficial/ele2026/6258';
 
@@ -16,7 +17,7 @@ const TSE_BASE = 'https://resultados.tse.jus.br/oficial/ele2026/6258';
  * @param  array<string, int>  $votes  keyed by candidate sequence number
  * @return array<string, mixed>
  */
-function tseResult(array $votes, string $time = '20:00:00', string $counted = '50'): array
+function tseResult(array $votes, string $time = '20:00:00', string $counted = '50', ?string $elected = null): array
 {
     $candidates = [
         '280002551544' => ['n' => '22', 'nmu' => 'FLAVIO BOLSONARO', 'nm' => 'FLAVIO NANTES BOLSONARO', 'sg' => 'PL'],
@@ -37,12 +38,13 @@ function tseResult(array $votes, string $time = '20:00:00', string $counted = '5
                         'nmu' => $candidate['nmu'],
                         'nm' => $candidate['nm'],
                         'vap' => (string) ($votes[$sequence] ?? 0),
+                        'st' => $sequence === $elected ? 'Eleito' : '',
                     ]],
                 ]],
             ])->values()->all(),
         ]],
         's' => ['ts' => '100', 'st' => $counted, 'pstn' => "{$counted},000000000"],
-        'e' => ['te' => '1000', 'c' => '800', 'a' => '200'],
+        'e' => ['te' => '1000', 'est' => '900', 'c' => '800', 'a' => '200'],
         'v' => ['vv' => (string) array_sum($votes), 'vb' => '10', 'tvn' => '20'],
     ];
 }
@@ -52,8 +54,7 @@ function tseResult(array $votes, string $time = '20:00:00', string $counted = '5
  */
 function fakeTse(string $countryTime = '20:00:00', string $municipalityTime = '19:59:00', array $overrides = []): void
 {
-    Http::fake([
-        ...$overrides,
+    $stubs = [
         TSE_BASE.'/config/mun-e006258-cm.json' => Http::response(['abr' => [
             ['cd' => 'sp', 'mu' => [
                 ['cd' => '71072', 'cdi' => '3550308', 'nm' => 'SÃO PAULO', 'c' => 's'],
@@ -68,8 +69,11 @@ function fakeTse(string $countryTime = '20:00:00', string $municipalityTime = '1
             ['tpabr' => 'mun', 'cdabr' => '61000', 'dt' => '25/10/2026', 'ht' => '18:00:00', 's' => ['st' => '0']],
         ]]),
         TSE_BASE.'/dados/sp/sp71072-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 100, '280002542548' => 300], $municipalityTime, '10')),
-        'resultados.tse.jus.br/*' => Http::response('', 404),
-    ]);
+    ];
+
+    // Overrides replace a default with the same URL; anything else on the
+    // TSE host is a 404, matched last.
+    Http::fake([...$stubs, ...$overrides, 'resultados.tse.jus.br/*' => Http::response('', 404)]);
 }
 
 function municipalityFileRequests(): int
@@ -167,4 +171,46 @@ test('expired push subscriptions are removed', function () {
     $this->artisan('tse:sincronizar')->assertSuccessful();
 
     expect(PushSubscription::query()->count())->toBe(0);
+});
+
+test('sync stores the officially elected candidate and the counted electorate', function () {
+    Http::preventStrayRequests();
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(
+            tseResult(['280002551544' => 400, '280002542548' => 600], elected: '280002542548'),
+        ),
+    ]);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    $country = Result::query()->forElection(6258, Result::SCOPE_COUNTRY)->sole();
+    expect($country->elected_candidate_id)->toBe(Candidate::query()->where('number', 13)->value('id'))
+        ->and($country->electorate_counted)->toBe(900);
+});
+
+test('sync downloads each candidate photo once', function () {
+    Http::preventStrayRequests();
+    Storage::fake();
+    $jpeg = "\xFF\xD8\xFF\xE0fake-jpeg";
+    fakeTse(overrides: [TSE_BASE.'/fotos/br/*' => Http::response($jpeg, 200, ['Content-Type' => 'image/jpeg'])]);
+    $photoRequests = fn (): int => Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/fotos/br/'))->count();
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    expect($photoRequests())->toBe(2);
+
+    $lula = Candidate::query()->where('number', 13)->sole();
+    Storage::assertExists(Candidate::photoPath($lula->tse_sequence));
+    expect($lula->toPublicArray()['photo_url'])->toBe(route('candidates.photo', $lula));
+    $this->get(route('candidates.photo', $lula))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    expect($photoRequests())->toBe(2);
+});
+
+test('a candidate without photo has no photo url', function () {
+    Storage::fake();
+    $candidate = Candidate::factory()->create();
+
+    expect($candidate->toPublicArray()['photo_url'])->toBeNull();
+    $this->get(route('candidates.photo', $candidate))->assertNotFound();
 });
