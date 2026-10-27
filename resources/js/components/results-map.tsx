@@ -62,6 +62,40 @@ function padded([x, y, w, h]: [number, number, number, number]): ViewBox {
 }
 
 /**
+ * Area drawn around a viewBox: the SVG is MARGIN visible sizes larger on
+ * each side.
+ */
+function drawnArea(box: ViewBox): ViewBox {
+    return {
+        x: box.x - box.w * MARGIN,
+        y: box.y - box.h * MARGIN,
+        w: box.w * (1 + 2 * MARGIN),
+        h: box.h * (1 + 2 * MARGIN),
+    };
+}
+
+function contains(outer: ViewBox, inner: ViewBox): boolean {
+    return (
+        inner.x >= outer.x &&
+        inner.y >= outer.y &&
+        inner.x + inner.w <= outer.x + outer.w &&
+        inner.y + inner.h <= outer.y + outer.h
+    );
+}
+
+function union(a: ViewBox, b: ViewBox): ViewBox {
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+
+    return {
+        x,
+        y,
+        w: Math.max(a.x + a.w, b.x + b.w) - x,
+        h: Math.max(a.y + a.h, b.y + b.h) - y,
+    };
+}
+
+/**
  * Scale and offset, in pixels, of a viewBox drawn centered inside an element
  * of the given size (the SVG default "xMidYMid meet").
  */
@@ -148,6 +182,14 @@ export default function ResultsMap({
     const animationFrame = useRef(0);
     const wheelTimer = useRef(0);
     const tween = useRef(0);
+    // While flying, the drawn map is only moved and scaled, even blurry,
+    // and drawn again once at the end.
+    const flying = useRef(false);
+    const pendingFlight = useRef<{
+        from: ViewBox;
+        to: ViewBox;
+        duration: number;
+    } | null>(null);
     const pointers = useRef(new Map<number, { x: number; y: number }>());
     const gesture = useRef<{
         moved: number;
@@ -213,6 +255,14 @@ export default function ResultsMap({
         }
 
         applyTransform();
+
+        // The area holding both views is drawn: the flight can start.
+        const flight = pendingFlight.current;
+
+        if (flight) {
+            pendingFlight.current = null;
+            fly(flight.from, flight.to, flight.duration);
+        }
     }, [viewBox]);
 
     // The frame only exists once the map is ready, and while it is shown
@@ -234,7 +284,7 @@ export default function ResultsMap({
 
     const onWheel = useEffectEvent((event: WheelEvent) => {
         event.preventDefault();
-        cancelAnimationFrame(tween.current);
+        stopFlight();
         setHover(null);
         preview(
             zoomAt(
@@ -300,7 +350,7 @@ export default function ResultsMap({
             x + scale * (1 + MARGIN) * width >= width &&
             y + scale * (1 + MARGIN) * height >= height;
 
-        if (!covered || scale > MAX_PREVIEW_SCALE) {
+        if (!covered || (scale > MAX_PREVIEW_SCALE && !flying.current)) {
             commit();
         }
 
@@ -397,7 +447,7 @@ export default function ResultsMap({
      * moved while it runs; it is drawn again at the end.
      */
     function animateTo(box: ViewBox, duration: number) {
-        cancelAnimationFrame(tween.current);
+        stopFlight();
 
         const from = currentBox();
 
@@ -407,16 +457,32 @@ export default function ResultsMap({
             return;
         }
 
+        flying.current = true;
+
+        // Far away (another state): draw an area holding both views first,
+        // so the flight never needs to draw the map again on its way.
+        if (drawn.current && !contains(drawnArea(drawn.current), box)) {
+            live.current = from;
+            pendingFlight.current = { from, to: box, duration };
+            setViewBox(union(from, box));
+
+            return;
+        }
+
+        fly(from, box, duration);
+    }
+
+    function fly(from: ViewBox, to: ViewBox, duration: number) {
         const start = performance.now();
         const step = (now: number) => {
             const progress = Math.min((now - start) / duration, 1);
             const t = easeOutCubic(progress);
 
             live.current = {
-                x: from.x + (box.x - from.x) * t,
-                y: from.y + (box.y - from.y) * t,
-                w: from.w + (box.w - from.w) * t,
-                h: from.h + (box.h - from.h) * t,
+                x: from.x + (to.x - from.x) * t,
+                y: from.y + (to.y - from.y) * t,
+                w: from.w + (to.w - from.w) * t,
+                h: from.h + (to.h - from.h) * t,
             };
             applyTransform();
 
@@ -424,11 +490,22 @@ export default function ResultsMap({
                 tween.current = requestAnimationFrame(step);
             } else {
                 tween.current = 0;
-                show(box);
+                flying.current = false;
+                show(to);
             }
         };
 
         tween.current = requestAnimationFrame(step);
+    }
+
+    /**
+     * Interrupt a flight where it is (a gesture takes over).
+     */
+    function stopFlight() {
+        cancelAnimationFrame(tween.current);
+        tween.current = 0;
+        flying.current = false;
+        pendingFlight.current = null;
     }
 
     /**
@@ -472,7 +549,7 @@ export default function ResultsMap({
     }
 
     function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-        cancelAnimationFrame(tween.current);
+        stopFlight();
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, {
             x: event.clientX,
@@ -699,7 +776,12 @@ export default function ResultsMap({
                                 geometry={geometry}
                                 results={results}
                                 candidates={candidates}
-                                selectedState={selectedState}
+                                // Only filters the paths of a state office: in
+                                // the whole country, choosing a state must not
+                                // draw thousands of paths again.
+                                selectedState={
+                                    restrictToState ? selectedState : ''
+                                }
                                 restrictToState={restrictToState}
                             />
                         </g>
