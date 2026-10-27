@@ -77,6 +77,7 @@ class DashboardController extends Controller
             'tasks' => array_map(fn (MaintenanceTask $task): array => [
                 'value' => $task->value,
                 'label' => $task->label(),
+                'button_label' => $task->buttonLabel(),
                 'description' => $task->description(),
                 'needs_election' => $task->needsElection(),
             ], MaintenanceTask::cases()),

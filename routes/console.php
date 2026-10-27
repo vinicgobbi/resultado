@@ -28,6 +28,15 @@ Schedule::command('tse:importar --revisar')
     ->withoutOverlapping(360)
     ->runInBackground();
 
+// Photos of past elections, like their results: only the majority offices
+// (a few thousand, shown in big); deputies and councillors are hundreds of
+// thousands, downloaded from the dashboard or when first shown. Stops on a
+// 429 and while an election is counted, and resumes on the next run.
+Schedule::command('tse:fotos --encerradas --sem-espera --cargo=presidente --cargo=governador --cargo=senador --cargo=prefeito')
+    ->hourly()
+    ->withoutOverlapping(120)
+    ->runInBackground();
+
 // Push notifications are queued by the sync; a short-lived worker started by
 // the scheduler sends them, so no permanent worker process is required.
 Schedule::command('queue:work --stop-when-empty --max-time=60')

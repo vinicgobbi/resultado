@@ -597,6 +597,30 @@ test('the photos command downloads every missing photo and stops on a 429', func
         ->assertFailed();
 });
 
+test('the photos of past elections are downloaded, majority offices first, but never during a count', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Election::factory()->municipal2024()->completed()->create();
+    $councillor = Candidate::factory()->running(Office::Councillor, State::SaoPaulo, '71072')->create();
+    $mayor = Candidate::factory()->running(Office::Mayor, State::SaoPaulo, '71072')->create();
+    Http::fake(['*/619/fotos/sp/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+
+    // 2026-10-26: the federal runoff is being counted.
+    $this->artisan('tse:fotos', ['--encerradas' => true])
+        ->expectsOutputToContain('Há eleição em apuração')
+        ->assertSuccessful();
+    Http::assertNothingSent();
+
+    $this->travelTo('2026-11-10 12:00:00');
+    $this->artisan('tse:fotos', ['--encerradas' => true, '--cargo' => ['prefeito']])->assertSuccessful();
+
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($mayor->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertMissing(Candidate::photoPath($councillor->tse_sequence));
+
+    $this->artisan('tse:fotos', ['--encerradas' => true])->assertSuccessful();
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($councillor->tse_sequence));
+});
+
 test('the photos command waits for the pause after a 429 and continues', function () {
     Http::preventStrayRequests();
     Storage::fake(Candidate::PHOTO_DISK);

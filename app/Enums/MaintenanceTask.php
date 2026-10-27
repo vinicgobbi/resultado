@@ -15,6 +15,8 @@ enum MaintenanceTask: string
     case Discover = 'descobrir';
     case Import = 'importar';
     case Photos = 'fotos';
+    case ElectionPhotos = 'fotos-eleicao';
+    case PastPhotos = 'fotos-encerradas';
     case Map = 'mapa';
     case ClearCache = 'limpar-cache';
 
@@ -25,7 +27,9 @@ enum MaintenanceTask: string
             self::FullSync => 'Ressincronizar por completo',
             self::Discover => 'Descobrir eleições novas',
             self::Import => 'Importar eleições encerradas',
-            self::Photos => 'Baixar fotos que faltam',
+            self::Photos => 'Baixar fotos da eleição atual',
+            self::ElectionPhotos => 'Baixar fotos da eleição',
+            self::PastPhotos => 'Baixar fotos das eleições encerradas',
             self::Map => 'Gerar o mapa',
             self::ClearCache => 'Limpar o cache dos resultados',
         };
@@ -38,7 +42,9 @@ enum MaintenanceTask: string
             self::FullSync => 'Baixa de novo todos os resultados de uma eleição, mesmo os que não mudaram.',
             self::Discover => 'Procura no índice do TSE eleições que ainda não estão cadastradas.',
             self::Import => 'Importa as eleições encerradas que ainda não foram baixadas.',
-            self::Photos => 'Baixa do TSE as fotos de candidatos que ainda não têm, sem provocar bloqueio.',
+            self::Photos => 'Baixa do TSE as fotos que faltam dos candidatos da eleição atual, sem provocar bloqueio.',
+            self::ElectionPhotos => 'Baixa do TSE as fotos que faltam dos candidatos de uma eleição.',
+            self::PastPhotos => 'Baixa as fotos que faltam de todas as eleições encerradas, da mais recente para a mais antiga. As municipais têm centenas de milhares de candidatos: pode levar horas e ocupar alguns GB.',
             self::Map => 'Baixa a malha do IBGE e gera de novo a geometria do mapa.',
             self::ClearCache => 'Faz as páginas de resultados serem calculadas de novo na próxima visita.',
         };
@@ -49,7 +55,19 @@ enum MaintenanceTask: string
      */
     public function needsElection(): bool
     {
-        return $this === self::FullSync;
+        return in_array($this, [self::FullSync, self::ElectionPhotos], true);
+    }
+
+    /**
+     * Short label of the button in the row of an election.
+     */
+    public function buttonLabel(): string
+    {
+        return match ($this) {
+            self::FullSync => 'Ressincronizar',
+            self::ElectionPhotos => 'Baixar fotos',
+            default => $this->label(),
+        };
     }
 
     /**
@@ -65,6 +83,8 @@ enum MaintenanceTask: string
             self::Discover => ['tse:descobrir', []],
             self::Import => ['tse:importar', []],
             self::Photos => ['tse:fotos', []],
+            self::ElectionPhotos => ['tse:fotos', ['--eleicao' => [(string) $election?->tse_code]]],
+            self::PastPhotos => ['tse:fotos', ['--encerradas' => true]],
             self::Map => ['mapa:baixar', []],
             self::ClearCache => ['resultados:limpar-cache', []],
         };

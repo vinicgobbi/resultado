@@ -33,6 +33,7 @@ type Health = {
 type Task = {
     value: string;
     label: string;
+    button_label: string;
     description: string;
     needs_election: boolean;
 };
@@ -61,7 +62,14 @@ type Props = {
 };
 
 /** Tasks that take long or download a lot: confirmed before starting. */
-const HEAVY = ['ressincronizar', 'importar', 'fotos', 'mapa'];
+const HEAVY = [
+    'ressincronizar',
+    'importar',
+    'fotos',
+    'fotos-eleicao',
+    'fotos-encerradas',
+    'mapa',
+];
 
 const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
     'na-fila': { label: 'Na fila', className: 'bg-primary-soft text-primary' },
@@ -169,7 +177,7 @@ export default function Dashboard({
         );
     }
 
-    const fullSync = tasks.find((task) => task.needs_election);
+    const electionTasks = tasks.filter((task) => task.needs_election);
 
     return (
         <AdminLayout title="Painel da apuração">
@@ -262,7 +270,6 @@ export default function Dashboard({
                                               election.results) *
                                           100
                                         : 0;
-                                const key = `${fullSync?.value}-${election.code}`;
 
                                 return (
                                     <tr key={election.code}>
@@ -317,25 +324,31 @@ export default function Dashboard({
                                                 value={election.last_synced_at}
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right">
-                                            {fullSync && (
-                                                <button
-                                                    type="button"
-                                                    disabled={
-                                                        busy.has(key) ||
-                                                        starting !== null
-                                                    }
-                                                    onClick={() =>
-                                                        start(
-                                                            fullSync,
-                                                            election,
-                                                        )
-                                                    }
-                                                    className="min-h-10 rounded-xl border-2 border-line-strong px-3 font-semibold whitespace-nowrap hover:border-primary hover:bg-primary-soft disabled:opacity-50"
-                                                >
-                                                    Ressincronizar
-                                                </button>
-                                            )}
+                                        <td className="px-4 py-3">
+                                            <div className="flex justify-end gap-2">
+                                                {electionTasks.map((task) => (
+                                                    <button
+                                                        key={task.value}
+                                                        type="button"
+                                                        disabled={
+                                                            busy.has(
+                                                                `${task.value}-${election.code}`,
+                                                            ) ||
+                                                            starting !== null
+                                                        }
+                                                        onClick={() =>
+                                                            start(
+                                                                task,
+                                                                election,
+                                                            )
+                                                        }
+                                                        aria-label={`${task.label}: ${election.name}`}
+                                                        className="min-h-10 rounded-xl border-2 border-line-strong px-3 font-semibold whitespace-nowrap hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+                                                    >
+                                                        {task.button_label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
