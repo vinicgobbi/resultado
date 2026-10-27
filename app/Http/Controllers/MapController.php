@@ -17,13 +17,20 @@ class MapController extends Controller
 {
     /**
      * Projected SVG geometry of every municipality and state, plus the
-     * municipality names used by the map tooltip.
+     * municipality names used by the map tooltip. Browsers that already have
+     * the current version get an empty "304 Not Modified".
      */
-    public function geometry(): Response
+    public function geometry(Request $request): Response
     {
         abort_unless(Storage::exists(MapGeometryBuilder::PATH), 404, 'Mapa ainda não gerado. Rode php artisan mapa:baixar.');
 
         $version = Storage::lastModified(MapGeometryBuilder::PATH).'-'.Municipality::query()->count();
+
+        $response = (new Response)->setEtag(md5($version))->setPublic()->setMaxAge(3600);
+
+        if ($response->isNotModified($request)) {
+            return $response;
+        }
 
         $content = Cache::rememberForever("mapa.geometria.{$version}", function (): string {
             $geometry = json_decode((string) Storage::get(MapGeometryBuilder::PATH), true, flags: JSON_THROW_ON_ERROR);
@@ -39,11 +46,7 @@ class MapController extends Controller
             return json_encode($geometry, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         });
 
-        return response($content, 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'public, max-age=3600',
-            'ETag' => '"'.md5($version).'"',
-        ]);
+        return $response->setContent($content)->header('Content-Type', 'application/json');
     }
 
     /**
@@ -63,8 +66,11 @@ class MapController extends Controller
 
         $result = $presenter->municipality($electionCode, $office, $municipality);
         $ids = array_column($result['results'] ?? [], 'candidate_id');
+        $state = $office->isNationwide() ? null : $municipality->state;
         // The colors of the race where the office is elected, as on the map.
-        $place = $presenter->summary($electionCode, $office, $office->isNationwide() ? null : $municipality->state);
+        $candidates = $presenter->summary($electionCode, $office, $state) === null
+            ? $presenter->publicCandidates($result, $office)
+            : $presenter->placeCandidates($electionCode, $office, $state);
 
         return response()->json([
             'name' => $municipality->name,
@@ -72,7 +78,7 @@ class MapController extends Controller
             'is_capital' => $municipality->is_capital,
             'result' => $result,
             'candidates' => array_values(array_filter(
-                $presenter->publicCandidates($place ?? $result, $office),
+                $candidates,
                 fn (array $candidate): bool => in_array($candidate['id'], $ids, true),
             )),
         ]);

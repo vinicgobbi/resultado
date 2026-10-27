@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -38,6 +39,11 @@ class Candidate extends Model
         '#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2',
         '#db2777', '#65a30d', '#ea580c', '#4f46e5', '#0d9488', '#a16207',
     ];
+
+    /**
+     * Disk of the photos, served directly by the web server.
+     */
+    public const string PHOTO_DISK = 'photos';
 
     /**
      * Storage path of the official photo downloaded from the TSE.
@@ -102,7 +108,19 @@ class Candidate extends Model
             'full_name' => $this->full_name,
             'party' => $this->party,
             'color' => $color ?? $this->displayColor(),
-            'photo_url' => route('candidates.photo', $this),
+            'photo_url' => $this->photoUrl(),
         ];
+    }
+
+    /**
+     * The static file once the photo was downloaded; until then, the route
+     * that downloads it from the TSE.
+     */
+    public function photoUrl(): string
+    {
+        $disk = Storage::disk(self::PHOTO_DISK);
+        $path = self::photoPath($this->tse_sequence);
+
+        return $disk->exists($path) ? $disk->url($path) : route('candidates.photo', $this);
     }
 }

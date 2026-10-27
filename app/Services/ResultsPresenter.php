@@ -25,6 +25,25 @@ use Illuminate\Support\Facades\Cache;
  */
 class ResultsPresenter
 {
+    /**
+     * Cached pages are dropped when a newer version is published; the
+     * lifetime only bounds what is left behind.
+     */
+    private const int CACHE_MINUTES = 60;
+
+    /**
+     * Version the cache is written to while warming it, instead of the
+     * current one.
+     */
+    private ?int $version = null;
+
+    /**
+     * Cache key suffixes written while warming.
+     *
+     * @var list<string>
+     */
+    private array $warmed = [];
+
     public function __construct(private readonly CandidateColors $colors) {}
 
     /**
@@ -41,7 +60,7 @@ class ResultsPresenter
      * @param  array{results: list<CandidateVotes>}|null  $result
      * @return Collection<int, Candidate>
      */
-    public function candidates(?array $result): Collection
+    private function candidates(?array $result): Collection
     {
         $ids = array_column($result['results'] ?? [], 'candidate_id');
 
@@ -68,6 +87,62 @@ class ResultsPresenter
         return array_values($ordered
             ->map(fn (Candidate $candidate): array => $candidate->toPublicArray($colors[$candidate->id] ?? null))
             ->all());
+    }
+
+    /**
+     * Public data of the candidates of the place where the office is elected.
+     *
+     * @return list<array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string}>
+     */
+    public function placeCandidates(int $electionCode, Office $office, ?State $state = null): array
+    {
+        $scopeCode = $office->isNationwide() ? 'br' : $state?->value;
+
+        if ($scopeCode === null) {
+            return [];
+        }
+
+        return $this->remember($electionCode, "{$office->value}.candidatos.{$scopeCode}", fn (): array => $this->publicCandidates(
+            $this->summary($electionCode, $office, $state),
+            $office,
+        ));
+    }
+
+    /**
+     * Compute the cached pages of the offices under a version that readers
+     * do not use yet.
+     *
+     * @param  list<Office>  $offices
+     * @return list<string> cache key suffixes written
+     */
+    public function warm(int $electionCode, array $offices, int $version): array
+    {
+        $this->version = $version;
+        $this->warmed = [];
+
+        try {
+            foreach ($offices as $office) {
+                $states = $office->isNationwide()
+                    ? [null]
+                    : array_map(fn (array $place): State => State::from(strtolower($place['code'])), $this->places($electionCode, $office));
+
+                if ($office->isNationwide()) {
+                    $this->states($electionCode, $office);
+                }
+
+                foreach ($states as $state) {
+                    $this->placeCandidates($electionCode, $office, $state);
+
+                    if ($office->hasMunicipalityResults()) {
+                        $this->map($electionCode, $office, $state);
+                    }
+                }
+            }
+
+            return array_values(array_unique($this->warmed));
+        } finally {
+            $this->version = null;
+        }
     }
 
     /**
@@ -192,7 +267,11 @@ class ResultsPresenter
      */
     private function remember(int $electionCode, string $key, Closure $callback): mixed
     {
-        return Cache::remember(ResultSynchronizer::cacheKey($electionCode, $key), now()->addMinutes(5), $callback);
+        if ($this->version !== null) {
+            $this->warmed[] = $key;
+        }
+
+        return Cache::remember(ResultSynchronizer::cacheKey($electionCode, $key, $this->version), now()->addMinutes(self::CACHE_MINUTES), $callback);
     }
 
     /**

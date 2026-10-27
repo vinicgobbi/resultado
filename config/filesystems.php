@@ -47,6 +47,17 @@ return [
             'report' => false,
         ],
 
+        // Candidate photos live under public/ so the web server serves the
+        // downloaded ones directly; only missing ones reach the application.
+        'photos' => [
+            'driver' => 'local',
+            'root' => public_path('fotos'),
+            'url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/fotos',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

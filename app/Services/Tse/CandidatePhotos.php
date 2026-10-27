@@ -15,7 +15,7 @@ class CandidatePhotos
 
     public function isStored(Candidate $candidate): bool
     {
-        return Storage::exists(Candidate::photoPath($candidate->tse_sequence));
+        return Storage::disk(Candidate::PHOTO_DISK)->exists(Candidate::photoPath($candidate->tse_sequence));
     }
 
     /**
@@ -64,7 +64,7 @@ class CandidatePhotos
                 Cache::put(self::missingKey($candidate), true, now()->addDay());
                 $totals['missing']++;
             } else {
-                Storage::put(Candidate::photoPath($candidate->tse_sequence), $photo);
+                Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($candidate->tse_sequence), $photo);
                 $totals['downloaded']++;
             }
         }

@@ -5,7 +5,11 @@ use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Models\Result;
+use App\Models\User;
+use App\Services\MapGeometryBuilder;
+use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /**
@@ -47,6 +51,45 @@ test('home page shows the active round with national, state and map results', fu
             ->missing('map')
             ->loadDeferredProps(fn (Assert $reload) => $reload
                 ->where('map.3550308', [$second->id, 75, 50])));
+});
+
+test('polling the version does not load the results', function () {
+    [$first] = Candidate::factory()->count(1)->create();
+    storeResult(Result::SCOPE_COUNTRY, 'br', [$first->id => 300]);
+
+    $this->get(route('home'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('version', 0)
+            ->has('summary')
+            ->reloadOnly('version', fn (Assert $reload) => $reload
+                ->where('version', 0)
+                ->missing('summary')
+                ->missing('candidates')
+                ->missing('states')));
+});
+
+test('changing a candidate color invalidates the cached results', function () {
+    $candidate = Candidate::factory()->create();
+
+    $this->actingAs(User::factory()->create())
+        ->patch(route('admin.candidates.update', $candidate), ['color' => '#aa00ff']);
+
+    expect(ResultSynchronizer::version(6257))->toBe(1)
+        ->and(ResultSynchronizer::version(6258))->toBe(1);
+});
+
+test('the map geometry is not sent again to a browser that has it', function () {
+    Storage::fake();
+    Storage::put(MapGeometryBuilder::PATH, json_encode(['width' => 1000, 'height' => 1000, 'municipalities' => [], 'states' => []]));
+
+    $etag = $this->get(route('map.geometry'))
+        ->assertOk()
+        ->assertJsonPath('width', 1000)
+        ->headers->get('ETag');
+
+    $this->get(route('map.geometry'), ['If-None-Match' => $etag])
+        ->assertStatus(304)
+        ->assertContent('');
 });
 
 test('home page renders without synchronized results', function () {

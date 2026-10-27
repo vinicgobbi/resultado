@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\Office;
+use App\Jobs\SendResultsNotification;
 use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\WebPush;
@@ -20,7 +21,7 @@ class SyncElectionResults extends Command
     /**
      * Execute the console command.
      */
-    public function handle(ResultSynchronizer $synchronizer, WebPush $webPush): int
+    public function handle(ResultSynchronizer $synchronizer): int
     {
         $round = (int) ($this->option('turno') ?: config('eleicoes.turno_ativo'));
 
@@ -67,12 +68,10 @@ class SyncElectionResults extends Command
             ));
         }
 
-        if ($countryChanged && ! $this->option('sem-notificacao')) {
-            $delivered = $webPush->broadcast();
+        if ($countryChanged && ! $this->option('sem-notificacao') && WebPush::isConfigured()) {
+            SendResultsNotification::dispatch();
 
-            if ($delivered > 0) {
-                $this->components->info("Notificação enviada para {$delivered} dispositivo(s).");
-            }
+            $this->components->info('Notificação push enfileirada.');
         }
 
         return self::SUCCESS;

@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateCandidateRequest;
 use App\Models\Candidate;
 use App\Services\ResultsPresenter;
+use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -53,13 +54,18 @@ class CandidateController extends Controller
     }
 
     /**
-     * Update the color of a candidate.
+     * Update the color of a candidate. The cached results of its elections
+     * are invalidated, so the public pages show the new color right away.
      */
     public function update(UpdateCandidateRequest $request, Candidate $candidate): RedirectResponse
     {
         $candidate->update([
             'color' => $request->filled('color') ? strtolower($request->string('color')->toString()) : null,
         ]);
+
+        foreach ($candidate->office->rounds() as $round) {
+            ResultSynchronizer::invalidate((int) $candidate->office->electionCode($round));
+        }
 
         return back()->with('success', "Cor de {$candidate->ballot_name} atualizada.");
     }

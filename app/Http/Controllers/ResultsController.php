@@ -6,6 +6,7 @@ use App\Enums\Office;
 use App\Enums\State;
 use App\Services\MapGeometryBuilder;
 use App\Services\ResultsPresenter;
+use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -20,6 +21,9 @@ class ResultsController extends Controller
     /**
      * Live results page of an office: the place where it is elected, the
      * states (president) and the map of municipalities.
+     *
+     * The page polls only the version, and reloads the results when it
+     * changes, so the results are only computed when requested.
      */
     public function index(Request $request): Response
     {
@@ -28,7 +32,6 @@ class ResultsController extends Controller
         $electionCode = (int) $office->electionCode($round);
         $places = $office->isNationwide() ? [] : $this->presenter->places($electionCode, $office);
         $state = $office->isNationwide() ? null : $this->state($request, $places);
-        $summary = $this->presenter->summary($electionCode, $office, $state);
 
         return Inertia::render('results/index', [
             'round' => $round,
@@ -38,10 +41,11 @@ class ResultsController extends Controller
                 ->map(fn (Office $option): array => ['value' => $option->value, 'label' => $option->label($state)])
                 ->values(),
             'state' => $state?->abbreviation(),
+            'version' => ResultSynchronizer::version($electionCode),
             'places' => $places,
-            'candidates' => $this->presenter->publicCandidates($summary, $office),
-            'summary' => $summary,
-            'states' => $office->isNationwide() ? $this->presenter->states($electionCode, $office) : [],
+            'candidates' => fn (): array => $this->presenter->placeCandidates($electionCode, $office, $state),
+            'summary' => fn (): ?array => $this->presenter->summary($electionCode, $office, $state),
+            'states' => fn (): array => $office->isNationwide() ? $this->presenter->states($electionCode, $office) : [],
             'mapAvailable' => $office->hasMunicipalityResults() && Storage::exists(MapGeometryBuilder::PATH),
             'map' => Inertia::defer(fn (): array => $office->hasMunicipalityResults() && ($office->isNationwide() || $state !== null)
                 ? $this->presenter->map($electionCode, $office, $state)
@@ -56,8 +60,9 @@ class ResultsController extends Controller
     public function summary(Request $request): JsonResponse
     {
         $round = $this->round($request);
-        $summary = $this->presenter->summary((int) Office::President->electionCode($round), Office::President);
-        $candidates = $this->presenter->candidates($summary);
+        $electionCode = (int) Office::President->electionCode($round);
+        $summary = $this->presenter->summary($electionCode, Office::President);
+        $candidates = collect($this->presenter->placeCandidates($electionCode, Office::President))->keyBy('id');
         $winner = $summary['winners'][0] ?? null;
 
         return response()->json([
@@ -66,13 +71,13 @@ class ResultsController extends Controller
             'is_final' => $summary['is_final'] ?? false,
             'updated_at' => $summary['updated_at'] ?? null,
             'winner' => $winner === null ? null : [
-                'name' => $candidates->get($winner['candidate_id'])?->ballot_name,
+                'name' => $candidates->get($winner['candidate_id'])['name'] ?? null,
                 'status' => $winner['status'],
             ],
             'candidates' => collect($summary['results'] ?? [])
                 ->take(4)
                 ->map(fn (array $result): array => [
-                    'name' => $candidates->get($result['candidate_id'])?->ballot_name,
+                    'name' => $candidates->get($result['candidate_id'])['name'] ?? null,
                     'percent' => $result['percent'],
                 ])
                 ->values(),

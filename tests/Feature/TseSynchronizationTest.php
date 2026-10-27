@@ -2,6 +2,7 @@
 
 use App\Enums\Office;
 use App\Enums\State;
+use App\Jobs\SendResultsNotification;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Models\PushSubscription;
@@ -10,7 +11,9 @@ use App\Services\Tse\ResultSynchronizer;
 use App\Services\Tse\TseClient;
 use App\Services\WebPush;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 
@@ -167,6 +170,40 @@ test('a push notification is sent only when the national result changes', functi
     expect($pushes())->toBe(1);
 });
 
+test('the push notification is queued instead of holding up the sync', function () {
+    Http::preventStrayRequests();
+    Queue::fake();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    fakeTse();
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    Queue::assertPushed(SendResultsNotification::class);
+});
+
+test('a sync caches the results under a new version only when something changed', function () {
+    Http::preventStrayRequests();
+    fakeTse();
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    $version = ResultSynchronizer::version(6258);
+    expect($version)->toBe(1)
+        ->and(Cache::has(ResultSynchronizer::cacheKey(6258, 'presidente.resumo.br')))->toBeTrue()
+        ->and(Cache::has(ResultSynchronizer::cacheKey(6258, 'presidente.mapa.br')))->toBeTrue();
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    expect(ResultSynchronizer::version(6258))->toBe($version);
+
+    Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(ResultSynchronizer::version(6258))->toBe($version + 1)
+        ->and(Cache::has(ResultSynchronizer::cacheKey(6258, 'presidente.resumo.br')))->toBeTrue()
+        ->and(Cache::has(ResultSynchronizer::cacheKey(6258, 'presidente.resumo.br', $version)))->toBeFalse()
+        ->and(Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->sole()->tse_updated_at?->format('H:i:s'))
+        ->toBe('20:00:00');
+});
+
 test('expired push subscriptions are removed', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
@@ -195,7 +232,7 @@ test('sync stores the officially elected candidate and the counted electorate', 
 
 test('a candidate photo is downloaded from the TSE once, on the first request', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     $jpeg = "\xFF\xD8\xFF\xE0fake-jpeg";
     Http::fake(['resultados.tse.jus.br/oficial/ele2026/6259/fotos/sp/*' => Http::response($jpeg, 200, ['Content-Type' => 'image/jpeg'])]);
     $candidate = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
@@ -205,14 +242,18 @@ test('a candidate photo is downloaded from the TSE once, on the first request', 
     $this->get(route('candidates.photo', $candidate))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
     $this->get(route('candidates.photo', $candidate))->assertOk();
 
-    Storage::assertExists(Candidate::photoPath($candidate->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($candidate->tse_sequence));
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request->url() === "https://resultados.tse.jus.br/oficial/ele2026/6259/fotos/sp/{$candidate->tse_sequence}.jpeg");
+
+    // Once stored, pages link to the file served by the web server.
+    expect($candidate->toPublicArray()['photo_url'])
+        ->toBe(Storage::disk(Candidate::PHOTO_DISK)->url(Candidate::photoPath($candidate->tse_sequence)));
 });
 
 test('presidential photos come from the first round of the federal election', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     Http::fake(['resultados.tse.jus.br/oficial/ele2026/6257/fotos/br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
     $candidate = Candidate::factory()->create();
 
@@ -221,7 +262,7 @@ test('presidential photos come from the first round of the federal election', fu
 
 test('a missing photo is not requested again for a while', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     Http::fake(['resultados.tse.jus.br/*' => Http::response('', 404)]);
     $candidate = Candidate::factory()->create();
 
@@ -390,7 +431,7 @@ test('an election with failed downloads is not complete', function () {
 
 test('a photo blocked by a 429 is retried later instead of marked as missing', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     Http::fakeSequence('resultados.tse.jus.br/*')
         ->push('', 429)
         ->push("\xFF\xD8\xFF\xE0fake-jpeg");
@@ -406,10 +447,10 @@ test('a photo blocked by a 429 is retried later instead of marked as missing', f
 
 test('the photos command downloads every missing photo and stops on a 429', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     [$first, $second] = Candidate::factory()->count(2)->create();
     $deputy = Candidate::factory()->running(Office::FederalDeputy, State::SaoPaulo)->create();
-    Storage::put(Candidate::photoPath($first->tse_sequence), 'stored');
+    Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($first->tse_sequence), 'stored');
     Http::fake([
         "*/6257/fotos/br/{$second->tse_sequence}.jpeg" => Http::response("\xFF\xD8\xFF\xE0fake-jpeg"),
         "*/6259/fotos/sp/{$deputy->tse_sequence}.jpeg" => Http::response('', 404),
@@ -419,7 +460,7 @@ test('the photos command downloads every missing photo and stops on a 429', func
         ->expectsOutputToContain('1 fotos baixadas, 1 sem foto no TSE, 0 falharam')
         ->assertSuccessful();
 
-    Storage::assertExists(Candidate::photoPath($second->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($second->tse_sequence));
     Http::assertSentCount(2);
 
     $this->artisan('tse:fotos')->expectsOutputToContain('Todas as fotos já foram baixadas.')->assertSuccessful();
@@ -434,7 +475,7 @@ test('the photos command downloads every missing photo and stops on a 429', func
 
 test('the photos command waits for the pause after a 429 and continues', function () {
     Http::preventStrayRequests();
-    Storage::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
     Sleep::fake(syncWithCarbon: true);
     $candidate = Candidate::factory()->create();
     Http::fakeSequence('resultados.tse.jus.br/*')
@@ -446,6 +487,6 @@ test('the photos command waits for the pause after a 429 and continues', functio
         ->expectsOutputToContain('1 fotos baixadas')
         ->assertSuccessful();
 
-    Storage::assertExists(Candidate::photoPath($candidate->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($candidate->tse_sequence));
     Sleep::assertSleptTimes(1);
 });

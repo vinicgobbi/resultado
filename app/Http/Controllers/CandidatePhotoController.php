@@ -19,7 +19,8 @@ class CandidatePhotoController extends Controller
 
     /**
      * Official photo of a candidate, downloaded from the TSE the first time
-     * it is requested (or beforehand with "php artisan tse:fotos").
+     * it is requested (or beforehand with "php artisan tse:fotos"). Later
+     * pages link to the stored file, served without the application.
      */
     public function __invoke(Candidate $candidate, CandidatePhotos $photos): BinaryFileResponse
     {
@@ -44,7 +45,7 @@ class CandidatePhotoController extends Controller
             abort_unless($photos->isStored($candidate), 503, 'Foto temporariamente indisponível.', ['Retry-After' => '30']);
         }
 
-        return response()->file(Storage::path(Candidate::photoPath($candidate->tse_sequence)), [
+        return response()->file(Storage::disk(Candidate::PHOTO_DISK)->path(Candidate::photoPath($candidate->tse_sequence)), [
             'Content-Type' => 'image/jpeg',
             'Cache-Control' => 'public, max-age=86400',
         ]);

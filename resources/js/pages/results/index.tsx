@@ -28,6 +28,8 @@ type Props = {
     offices: OfficeOption[];
     /** Abbreviation of the state of a state office. */
     state: string | null;
+    /** Changes whenever the synchronized results change. */
+    version: number;
     places: Place[];
     candidates: Candidate[];
     summary: ResultSummary | null;
@@ -76,6 +78,7 @@ export default function ResultsIndex({
     office,
     offices,
     state,
+    version,
     places,
     candidates,
     summary,
@@ -87,12 +90,11 @@ export default function ResultsIndex({
     const [detail, setDetail] = useState<MunicipalityDetail | null>(null);
     const http = useHttp<Record<string, never>, MunicipalityDetail>({});
 
+    // Polls only the version; the results are downloaded again when it
+    // changes.
     usePoll(
         POLL_INTERVAL,
-        {
-            only: ['candidates', 'summary', 'states', 'places', 'map'],
-            showProgress: false,
-        },
+        { only: ['version'], showProgress: false },
         {
             mode: 'rest',
             // A state office shows nothing until a state is picked.
@@ -100,6 +102,19 @@ export default function ResultsIndex({
                 (office === PRESIDENT || state !== null) && !summary?.is_final,
         },
     );
+    const loadedVersion = useRef(version);
+
+    useEffect(() => {
+        if (version === loadedVersion.current) {
+            return;
+        }
+
+        loadedVersion.current = version;
+        router.reload({
+            only: ['candidates', 'summary', 'states', 'places', 'map'],
+            showProgress: false,
+        });
+    }, [version]);
 
     const candidatesById = new Map(
         candidates.map((candidate) => [candidate.id, candidate]),

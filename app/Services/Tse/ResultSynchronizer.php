@@ -7,6 +7,7 @@ use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Municipality;
 use App\Models\Result;
+use App\Services\ResultsPresenter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\DB;
  * sync during the count only fetches what actually changed. Once every result
  * of an election is final and was downloaded without failures, the election
  * is complete and the TSE is no longer requested for it.
+ *
+ * Only results with a newer totalization time are written. When anything
+ * changed, the cached pages of the election are computed under a new version
+ * before readers move to it, so visitors never compute them.
  */
 class ResultSynchronizer
 {
@@ -35,7 +40,20 @@ class ResultSynchronizer
      */
     private bool $allFinal = true;
 
-    public function __construct(private readonly TseClient $client) {}
+    /**
+     * Whether the current sync stored any result.
+     */
+    private bool $changed = false;
+
+    /**
+     * Whether the current sync rewrites results that did not change.
+     */
+    private bool $full = false;
+
+    public function __construct(
+        private readonly TseClient $client,
+        private readonly ResultsPresenter $presenter,
+    ) {}
 
     /**
      * @param  list<Office>  $offices  offices of the election to synchronize
@@ -47,6 +65,8 @@ class ResultSynchronizer
     {
         $failuresBefore = $this->client->failedRequests();
         $this->allFinal = true;
+        $this->changed = false;
+        $this->full = $full;
 
         // Every election lists the same municipalities: a full sync refreshes
         // them once, with the federal election.
@@ -87,7 +107,9 @@ class ResultSynchronizer
             $full,
         );
 
-        Cache::forever(self::versionKey($electionCode), (int) Cache::get(self::versionKey($electionCode), 0) + 1);
+        if ($this->changed) {
+            $this->publishVersion($electionCode, $offices);
+        }
 
         $complete = $states > 0 && $this->allFinal && $this->client->failedRequests() === $failuresBefore;
         Cache::forever(self::completeKey($electionCode), $complete);
@@ -117,13 +139,49 @@ class ResultSynchronizer
 
     /**
      * Cache key used by readers of the results of an election; every sync
-     * moves the keys of the election to a new version.
+     * that changes something moves the keys of the election to a new version.
      */
-    public static function cacheKey(int $electionCode, string $suffix): string
+    public static function cacheKey(int $electionCode, string $suffix, ?int $version = null): string
     {
-        $version = (int) Cache::get(self::versionKey($electionCode), 0);
+        $version ??= self::version($electionCode);
 
         return "eleicoes.resultados.{$electionCode}.v{$version}.{$suffix}";
+    }
+
+    /**
+     * Current version of the cached results of an election, read once per
+     * request.
+     */
+    public static function version(int $electionCode): int
+    {
+        return (int) Cache::memo()->get(self::versionKey($electionCode), 0);
+    }
+
+    /**
+     * Move readers of the election to a new, empty version (the cached pages
+     * are computed again on their next visit).
+     */
+    public static function invalidate(int $electionCode): void
+    {
+        Cache::memo()->forever(self::versionKey($electionCode), self::version($electionCode) + 1);
+    }
+
+    /**
+     * Compute the cached pages under the next version, move readers to it and
+     * drop the pages of the previous one.
+     *
+     * @param  list<Office>  $offices
+     */
+    private function publishVersion(int $electionCode, array $offices): void
+    {
+        $previous = self::version($electionCode);
+        $suffixes = $this->presenter->warm($electionCode, $offices, $previous + 1);
+
+        Cache::memo()->forever(self::versionKey($electionCode), $previous + 1);
+
+        foreach ($suffixes as $suffix) {
+            Cache::forget(self::cacheKey($electionCode, $suffix, $previous));
+        }
     }
 
     private static function versionKey(int $electionCode): string
@@ -324,10 +382,7 @@ class ResultSynchronizer
      */
     private function outdatedMunicipalities(int $electionCode, Office $office, array $states, array $progress, bool $full): array
     {
-        $storedUpdates = Result::query()
-            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
-            ->pluck('tse_updated_at', 'scope_code')
-            ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'));
+        $storedUpdates = $this->storedUpdates($electionCode, $office, Result::SCOPE_MUNICIPALITY);
 
         $outdated = [];
 
@@ -338,16 +393,33 @@ class ResultSynchronizer
                 continue;
             }
 
-            if (! $municipality['counted'] && ! $storedUpdates->has($tseCode)) {
+            if (! $municipality['counted'] && ! array_key_exists($tseCode, $storedUpdates)) {
                 continue;
             }
 
-            if ($full || $storedUpdates->get($tseCode) !== $municipality['updated_at']) {
+            if ($full || ($storedUpdates[$tseCode] ?? null) !== $municipality['updated_at']) {
                 $outdated[$tseCode] = $municipality['state'];
             }
         }
 
         return $outdated;
+    }
+
+    /**
+     * Totalization time of the stored results of a scope, keyed by scope code
+     * (numeric codes become integer keys).
+     *
+     * @param  list<string>|null  $scopeCodes  only these places
+     * @return array<array-key, string|null>
+     */
+    private function storedUpdates(int $electionCode, Office $office, string $scope, ?array $scopeCodes = null): array
+    {
+        return Result::query()
+            ->forElection($electionCode, $office, $scope)
+            ->when($scopeCodes !== null, fn ($query) => $query->whereIn('scope_code', $scopeCodes))
+            ->pluck('tse_updated_at', 'scope_code')
+            ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'))
+            ->all();
     }
 
     private function storeCandidates(Office $office, ?State $state, ResultPayload $payload): void
@@ -390,9 +462,22 @@ class ResultSynchronizer
      */
     private function storeResults(int $electionCode, Office $office, string $scope, array $payloads): void
     {
+        if ($payloads !== [] && ! $this->full) {
+            $storedUpdates = $this->storedUpdates($electionCode, $office, $scope, array_map(strval(...), array_keys($payloads)));
+
+            $payloads = array_filter(
+                $payloads,
+                fn (ResultPayload $payload, int|string $scopeCode): bool => $payload->updatedAt === null
+                    || ($storedUpdates[$scopeCode] ?? null) !== $payload->updatedAt->format('Y-m-d H:i:s'),
+                ARRAY_FILTER_USE_BOTH,
+            );
+        }
+
         if ($payloads === []) {
             return;
         }
+
+        $this->changed = true;
 
         $now = now();
         $rows = [];

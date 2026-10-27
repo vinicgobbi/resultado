@@ -21,6 +21,11 @@ class MapGeometryBuilder
 
     private const int WIDTH = 1000;
 
+    /**
+     * Decimal places of the coordinates: the map zooms up to 125 times.
+     */
+    private const int PRECISION = 2;
+
     private float $minLongitude;
 
     private float $maxLatitude;
@@ -121,6 +126,10 @@ class MapGeometryBuilder
     }
 
     /**
+     * SVG path of a geometry: each ring starts at an absolute point and
+     * continues with relative moves, which are short and keep the precision
+     * the map needs when zoomed in.
+     *
      * @param  array<string, mixed>  $geometry
      * @return array{d: string, bbox: array{0: float, 1: float, 2: float, 3: float}}
      */
@@ -134,29 +143,56 @@ class MapGeometryBuilder
             $points = [];
 
             foreach ($ring as [$longitude, $latitude]) {
-                $x = round(($longitude - $this->minLongitude) * $this->longitudeFactor * $this->scale, 1);
-                $y = round(($this->maxLatitude - $latitude) * $this->scale, 1);
-                $point = "{$x} {$y}";
+                $point = [
+                    round(($longitude - $this->minLongitude) * $this->longitudeFactor * $this->scale, self::PRECISION),
+                    round(($this->maxLatitude - $latitude) * $this->scale, self::PRECISION),
+                ];
 
                 if (end($points) !== $point) {
                     $points[] = $point;
                 }
 
-                $minX = min($minX, $x);
-                $minY = min($minY, $y);
-                $maxX = max($maxX, $x);
-                $maxY = max($maxY, $y);
+                $minX = min($minX, $point[0]);
+                $minY = min($minY, $point[1]);
+                $maxX = max($maxX, $point[0]);
+                $maxY = max($maxY, $point[1]);
             }
 
-            if (count($points) >= 3) {
-                $commands .= 'M'.implode('L', $points).'Z';
+            if (count($points) < 3) {
+                continue;
             }
+
+            [$x, $y] = $points[0];
+            $commands .= 'M'.$this->coordinates($x, $y).'l';
+
+            foreach (array_slice($points, 1) as $index => [$nextX, $nextY]) {
+                $move = $this->coordinates(round($nextX - $x, self::PRECISION), round($nextY - $y, self::PRECISION));
+                $commands .= ($index > 0 && ! str_starts_with($move, '-') ? ' ' : '').$move;
+                [$x, $y] = [$nextX, $nextY];
+            }
+
+            $commands .= 'z';
         }
 
         return [
             'd' => $commands,
             'bbox' => [$minX, $minY, round($maxX - $minX, 1), round($maxY - $minY, 1)],
         ];
+    }
+
+    /**
+     * A pair of coordinates in the shortest form SVG accepts: "1.5-0.25".
+     */
+    private function coordinates(float $x, float $y): string
+    {
+        $y = $this->number($y);
+
+        return $this->number($x).(str_starts_with($y, '-') ? '' : ' ').$y;
+    }
+
+    private function number(float $value): string
+    {
+        return $value == 0 ? '0' : (string) $value;
     }
 
     /**
