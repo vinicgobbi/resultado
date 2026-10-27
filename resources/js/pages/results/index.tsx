@@ -61,6 +61,13 @@ type Props = {
 const POLL_INTERVAL = 20_000;
 
 /**
+ * The celebration opens once the view transition of the new page is over:
+ * elements animated on their own (the chosen office, the header) are drawn
+ * above the whole page while it runs, the celebration included.
+ */
+const CELEBRATION_DELAY = 450;
+
+/**
  * "Governador" → "governadores", "Deputado Federal" → "deputados federais".
  */
 function plural(label: string): string {
@@ -182,21 +189,26 @@ export default function ResultsIndex({
     const winnerIds = winners.map((winner) => winner.candidate_id).join();
     // Opens on load when the place has winners, and when one appears while
     // the page is open (polling), only while the winners are celebrated.
-    const [celebrating, setCelebrating] = useState(
-        celebrateWinners && winners.length > 0,
-    );
-    const previousWinners = useRef(winnerIds);
+    const [celebrating, setCelebrating] = useState(false);
+    const previousWinners = useRef('');
 
     useEffect(() => {
         if (
-            celebrateWinners &&
-            winnerIds !== '' &&
-            winnerIds !== previousWinners.current
+            !celebrateWinners ||
+            winnerIds === '' ||
+            winnerIds === previousWinners.current
         ) {
-            setCelebrating(true);
+            previousWinners.current = winnerIds;
+
+            return;
         }
 
-        previousWinners.current = winnerIds;
+        const timer = window.setTimeout(() => {
+            previousWinners.current = winnerIds;
+            setCelebrating(true);
+        }, CELEBRATION_DELAY);
+
+        return () => clearTimeout(timer);
     }, [winnerIds, celebrateWinners]);
 
     /**
