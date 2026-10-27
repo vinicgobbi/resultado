@@ -9,6 +9,7 @@ import NotificationToggle from '@/components/notification-toggle';
 import PickerMenu from '@/components/picker-menu';
 import ResultsMap from '@/components/results-map';
 import RunoffNotice from '@/components/runoff-notice';
+import RunoffToast from '@/components/runoff-toast';
 import SkipLink from '@/components/skip-link';
 import StateList from '@/components/state-list';
 import StatesTable from '@/components/states-table';
@@ -211,6 +212,32 @@ export default function ResultsIndex({
 
         return () => clearTimeout(timer);
     }, [winnerIds, celebrateWinners]);
+
+    // Candidates sure of a place in the runoff get a quieter celebration:
+    // on load, and when one more is sure while the page is open.
+    const runoff = summary?.runoff ?? null;
+    const runoffIds = runoff?.candidate_ids.join() ?? '';
+    const [toastingRunoff, setToastingRunoff] = useState(false);
+    const previousRunoff = useRef('');
+
+    useEffect(() => {
+        if (
+            !celebrateWinners ||
+            runoffIds === '' ||
+            runoffIds === previousRunoff.current
+        ) {
+            previousRunoff.current = runoffIds;
+
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            previousRunoff.current = runoffIds;
+            setToastingRunoff(true);
+        }, CELEBRATION_DELAY);
+
+        return () => clearTimeout(timer);
+    }, [runoffIds, celebrateWinners]);
 
     /**
      * Page of a view of an election, keeping the current office and place.
@@ -664,6 +691,14 @@ export default function ResultsIndex({
                     os dados oficiais divulgados pelo tribunal.
                 </footer>
             </div>
+
+            {toastingRunoff && runoff && (
+                <RunoffToast
+                    runoff={runoff}
+                    candidates={candidatesById}
+                    onClose={() => setToastingRunoff(false)}
+                />
+            )}
 
             {celebrating && celebrated.length > 0 && (
                 <WinnerCelebration

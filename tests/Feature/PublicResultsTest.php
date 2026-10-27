@@ -249,6 +249,18 @@ test('the final count confirms the first two in the runoff', function () {
         ->where('summary.runoff', ['status' => 'confirmed', 'candidate_ids' => [$first->id, $second->id]]));
 });
 
+test('the notification summary tells when a runoff is certain and who is in it', function () {
+    $this->travelTo('2026-10-05 12:00:00');
+    [$first, $second, $third] = Candidate::factory()->count(3)->create();
+    storeCountry([$first->id => 440, $second->id => 290, $third->id => 270], ['election_code' => 6257]);
+
+    $this->getJson(route('results.summary'))
+        ->assertOk()
+        ->assertJsonPath('round', 1)
+        ->assertJsonPath('winner', null)
+        ->assertJsonPath('runoff', ['status' => 'mathematical', 'names' => [$first->ballot_name]]);
+});
+
 test('the second round has no runoff', function () {
     [$first, $second, $third] = Candidate::factory()->count(3)->create();
     storeCountry([$first->id => 450, $second->id => 400, $third->id => 150]);

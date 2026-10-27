@@ -95,14 +95,33 @@ self.addEventListener('push', (event) => {
                     )
                     .join(' × ');
 
+                const counted = `${percent(summary.counted_percent)} das urnas apuradas`;
+                const runoff = summary.runoff;
+                const names = runoff?.names.filter(Boolean) ?? [];
+
+                // A winner first, then a runoff that is sure to happen, then
+                // the progress of the count.
                 const title = summary.winner
                     ? `🎉 ${summary.winner.name} ${summary.winner.status === 'elected' ? 'está eleito!' : 'está matematicamente eleito!'}`
-                    : summary.is_final
-                      ? `Apuração encerrada (${summary.round}º turno)`
-                      : `${percent(summary.counted_percent)} das urnas apuradas`;
+                    : runoff
+                      ? runoff.status === 'confirmed' && names.length === 2
+                          ? `🗳️ ${names[0]} e ${names[1]} vão ao 2º turno`
+                          : names.length === 2
+                            ? `🗳️ Vai ter 2º turno: ${names[0]} × ${names[1]}`
+                            : '🗳️ Vai ter 2º turno'
+                      : summary.is_final
+                        ? `Apuração encerrada (${summary.round}º turno)`
+                        : counted;
+
+                const body =
+                    runoff && runoff.status !== 'confirmed' && names.length < 2
+                        ? `${names.length === 1 ? `${names[0]} já garantiu vaga; a outra está em disputa.` : 'As duas vagas ainda estão em disputa.'} ${counted}.`
+                        : runoff || summary.winner
+                          ? `${leaders} · ${counted}`
+                          : leaders;
 
                 return self.registration.showNotification(title, {
-                    body: leaders || 'Novos resultados disponíveis.',
+                    body: body || 'Novos resultados disponíveis.',
                     icon: '/app-icons/icon-192.png',
                     badge: '/app-icons/icon-192.png',
                     tag: 'apuracao-brasil',

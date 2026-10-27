@@ -128,6 +128,7 @@ class ResultsController extends Controller
             ? collect()
             : collect($this->presenter->placeCandidates($election->tse_code, Office::President))->keyBy('id');
         $winner = $summary['winners'][0] ?? null;
+        $runoff = $summary['runoff'] ?? null;
 
         return response()->json([
             'round' => $election->round ?? 1,
@@ -137,6 +138,10 @@ class ResultsController extends Controller
             'winner' => $winner === null ? null : [
                 'name' => $candidates->get($winner['candidate_id'])['name'] ?? null,
                 'status' => $winner['status'],
+            ],
+            'runoff' => $runoff === null ? null : [
+                'status' => $runoff['status'],
+                'names' => array_map(fn (int $candidateId): ?string => $candidates->get($candidateId)['name'] ?? null, $runoff['candidate_ids']),
             ],
             'candidates' => collect($summary['results'] ?? [])
                 ->take(4)
