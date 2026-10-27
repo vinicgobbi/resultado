@@ -1,65 +1,41 @@
 import { Head, Link } from '@inertiajs/react';
 import SkipLink from '@/components/skip-link';
-import { formatDate } from '@/lib/format';
+import StatusBadge from '@/components/status-badge';
+import { dayLabel } from '@/lib/election';
+import { formatLongDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { home } from '@/routes';
 import { show } from '@/routes/elections';
-import type { Election, ElectionStatus } from '@/types';
+import type { ElectionDay } from '@/types';
 
 type Props = {
-    elections: (Election & { offices: string[] })[];
+    days: ElectionDay[];
 };
 
-const STATUS: Record<ElectionStatus, { label: string; className: string }> = {
-    agendada: {
-        label: 'Agendada',
-        className: 'bg-primary-soft text-primary',
-    },
-    apuracao: {
-        label: 'Em apuração',
-        className: 'bg-live-soft text-live',
-    },
-    concluida: {
-        label: 'Concluída',
-        className: 'bg-track text-ink',
-    },
-    pendente: {
-        label: 'Importando',
-        className: 'bg-warning-soft text-warning',
-    },
-};
-
-export default function ElectionsIndex({ elections }: Props) {
-    const years = [...new Set(elections.map((election) => election.year))];
+export default function ElectionsIndex({ days }: Props) {
+    const years = [...new Set(days.map((day) => day.year))];
 
     return (
         <>
-            <Head title="Eleições" />
+            <Head title="Escolha uma eleição" />
 
             <SkipLink />
 
             <div className="min-h-screen bg-canvas text-ink">
                 <header className="border-b border-line bg-surface">
                     <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-4">
-                        <img
-                            src="/app-icons/icon-192.png"
-                            alt=""
-                            className="size-9 rounded-lg"
-                        />
-                        <div>
-                            <h1 className="text-lg leading-tight font-bold text-ink">
-                                Eleições
-                            </h1>
-                            <p className="text-xs text-muted">
-                                Eleições ordinárias, com os dados oficiais do
-                                TSE
-                            </p>
-                        </div>
                         <Link
                             href={home()}
-                            className="ml-auto text-sm font-medium text-muted hover:text-ink"
+                            className="flex items-center gap-3 rounded-lg"
                         >
-                            Eleição atual
+                            <img
+                                src="/app-icons/icon-192.png"
+                                alt=""
+                                className="size-10 rounded-lg"
+                            />
+                            <span className="text-lg font-bold">
+                                Resultados das Eleições
+                            </span>
                         </Link>
                     </div>
                 </header>
@@ -67,54 +43,77 @@ export default function ElectionsIndex({ elections }: Props) {
                 <main
                     id="conteudo"
                     tabIndex={-1}
-                    className="mx-auto max-w-5xl space-y-8 px-4 py-6 focus:outline-none"
+                    className="mx-auto max-w-5xl space-y-10 px-4 py-8 focus:outline-none"
                 >
-                    {elections.length === 0 && (
-                        <div className="rounded-xl border border-dashed border-line-strong p-10 text-center text-muted">
+                    <div className="space-y-2">
+                        <h1 className="text-3xl font-bold">
+                            Qual eleição você quer ver?
+                        </h1>
+                        <p className="text-lg text-muted">
+                            Resultados oficiais do Tribunal Superior Eleitoral
+                            (TSE), de todo o Brasil.
+                        </p>
+                    </div>
+
+                    {days.length === 0 && (
+                        <p className="rounded-xl border border-dashed border-line-strong p-10 text-center text-lg text-muted">
                             Ainda não há eleições disponíveis.
-                        </div>
+                        </p>
                     )}
 
                     {years.map((year) => (
-                        <section key={year} className="space-y-3">
-                            <h2 className="text-2xl font-bold text-ink">
-                                {year}
+                        <section
+                            key={year}
+                            aria-labelledby={`ano-${year}`}
+                            className="space-y-4"
+                        >
+                            <h2
+                                id={`ano-${year}`}
+                                className="text-2xl font-bold"
+                            >
+                                Eleições {year}
                             </h2>
-                            <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
-                                {elections
-                                    .filter(
-                                        (election) => election.year === year,
-                                    )
-                                    .map((election) => (
-                                        <li key={election.code}>
+                            <ul className="grid gap-4 sm:grid-cols-2">
+                                {days
+                                    .filter((day) => day.year === year)
+                                    .map((day) => (
+                                        <li key={day.code}>
                                             <Link
-                                                href={show(election.code)}
-                                                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-subtle"
+                                                href={show(day.code)}
+                                                className={cn(
+                                                    'flex h-full flex-col gap-3 rounded-2xl border-2 bg-surface p-5 hover:border-primary hover:bg-primary-soft',
+                                                    day.status === 'apuracao'
+                                                        ? 'border-live'
+                                                        : 'border-line',
+                                                )}
                                             >
-                                                <span className="w-24 shrink-0 text-sm text-muted tabular-nums">
-                                                    {formatDate(election.date)}
+                                                <span className="flex flex-wrap items-start justify-between gap-2">
+                                                    <span>
+                                                        <span className="block text-2xl font-bold">
+                                                            {day.round}º turno
+                                                        </span>
+                                                        <span className="block text-muted">
+                                                            {formatLongDate(
+                                                                day.date,
+                                                            )}
+                                                        </span>
+                                                    </span>
+                                                    <StatusBadge
+                                                        status={day.status}
+                                                    />
                                                 </span>
-                                                <span className="min-w-0 flex-1">
-                                                    <span className="block font-medium text-ink">
-                                                        {election.name}
+                                                <span className="text-base">
+                                                    <span className="sr-only">
+                                                        Cargos:{' '}
                                                     </span>
-                                                    <span className="block text-xs text-muted">
-                                                        {election.offices.join(
-                                                            ', ',
-                                                        )}
-                                                    </span>
+                                                    {day.offices.join(', ')}
                                                 </span>
                                                 <span
-                                                    className={cn(
-                                                        'rounded-full px-2 py-0.5 text-xs font-medium',
-                                                        STATUS[election.status]
-                                                            .className,
-                                                    )}
+                                                    aria-hidden="true"
+                                                    className="mt-auto font-semibold text-primary"
                                                 >
-                                                    {
-                                                        STATUS[election.status]
-                                                            .label
-                                                    }
+                                                    Ver resultados de{' '}
+                                                    {dayLabel(day)} →
                                                 </span>
                                             </Link>
                                         </li>

@@ -184,6 +184,44 @@ class Election extends Model
     }
 
     /**
+     * Election days, the most recent first: the elections of the same day
+     * and round (federal, state and municipal) are shown as one, opened on
+     * the federal one.
+     *
+     * @return array<int, array{code: int, year: int, round: int, date: string, status: string, offices: array<int, string>}>
+     */
+    public static function days(): array
+    {
+        return self::query()
+            ->get()
+            ->groupBy(fn (self $election): string => "{$election->date->toDateString()}-{$election->round}")
+            ->map(function (Collection $elections): array {
+                $elections = $elections->sortBy(fn (self $election): int => $election->type->order())->values();
+                /** @var self $first */
+                $first = $elections->first();
+                $statuses = $elections->map(fn (self $election): string => $election->status());
+
+                return [
+                    'code' => $first->tse_code,
+                    'year' => $first->date->year,
+                    'round' => $first->round,
+                    'date' => $first->date->toDateString(),
+                    // The day is as far along as its least advanced election.
+                    'status' => collect(['apuracao', 'agendada', 'pendente', 'concluida'])
+                        ->first(fn (string $status): bool => $statuses->contains($status), 'concluida'),
+                    'offices' => $elections
+                        ->flatMap(fn (self $election): array => $election->offices->map(fn (Office $office): string => $office->label())->all())
+                        ->unique()
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->sortByDesc(fn (array $day): string => "{$day['date']}-{$day['round']}")
+            ->values()
+            ->all();
+    }
+
+    /**
      * Elections shown together with this one: those of the same day and
      * round (federal, state and municipal ones).
      *

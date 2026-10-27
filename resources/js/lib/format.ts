@@ -46,3 +46,17 @@ export function formatDate(value: string): string {
 
     return `${day}/${month}/${year}`;
 }
+
+const longDateFormatter = new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+});
+
+/**
+ * "2026-10-04" → "4 de outubro de 2026".
+ */
+export function formatLongDate(value: string): string {
+    return longDateFormatter.format(new Date(`${value}T00:00:00Z`));
+}

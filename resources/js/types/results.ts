@@ -18,6 +18,17 @@ export type OfficeOption = {
 
 export type ElectionStatus = 'agendada' | 'apuracao' | 'concluida' | 'pendente';
 
+/** The elections of the same day and round, shown as one. */
+export type ElectionDay = {
+    /** Election the day opens on (the federal one first). */
+    code: number;
+    year: number;
+    round: number;
+    date: string;
+    status: ElectionStatus;
+    offices: string[];
+};
+
 export type Election = {
     code: number;
     name: string;

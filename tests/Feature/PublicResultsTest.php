@@ -53,7 +53,9 @@ test('home page shows the active round with national, state and map results', fu
             ->component('results/index')
             ->where('election.code', 6258)
             ->where('election.round', 2)
-            ->where('rounds', [['round' => 1, 'code' => 6257], ['round' => 2, 'code' => 6258]])
+            ->has('days', 2)
+            ->where('days.0.code', 6258)
+            ->where('days.1.code', 6257)
             ->where('summary.results.0', ['candidate_id' => $first->id, 'votes' => 300, 'percent' => 75])
             ->where('states.0.code', 'SP')
             ->where('states.0.leader_id', $second->id)
@@ -436,16 +438,34 @@ test('mayors of large municipalities need more than half of the valid votes', fu
         ->assertInertia(fn (Assert $page) => $page->where('summary.winners', []));
 });
 
-test('the archive lists every election', function () {
+test('the archive lists every election day, joining the elections of the same day', function () {
     Election::factory()->municipal2024()->completed()->create();
 
     $this->get(route('elections.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('elections/index')
-            ->has('elections', 5)
-            ->where('elections.0.code', 6258)
-            ->where('elections.0.status', 'apuracao')
-            ->where('elections.4.code', 619)
-            ->where('elections.4.status', 'concluida')
-            ->where('elections.4.offices', ['Prefeito', 'Vereador']));
+            ->has('days', 3)
+            ->where('days.0', [
+                'code' => 6258,
+                'year' => 2026,
+                'round' => 2,
+                'date' => '2026-10-25',
+                'status' => 'apuracao',
+                'offices' => ['Presidente', 'Governador'],
+            ])
+            ->where('days.1.code', 6257)
+            ->where('days.1.offices', ['Presidente', 'Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual'])
+            ->where('days.2.code', 619)
+            ->where('days.2.status', 'concluida')
+            ->where('days.2.offices', ['Prefeito', 'Vereador']));
+});
+
+test('an election day is only complete when all of its elections are', function () {
+    Election::query()->where('tse_code', 6258)->update(['completed_at' => now()]);
+
+    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('days.0.status', 'apuracao'));
+
+    Election::query()->where('tse_code', 6260)->update(['completed_at' => now()]);
+
+    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('days.0.status', 'concluida'));
 });

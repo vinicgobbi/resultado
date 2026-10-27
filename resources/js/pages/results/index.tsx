@@ -4,13 +4,17 @@ import CandidateResults from '@/components/candidate-results';
 import MunicipalityPanel from '@/components/municipality-panel';
 import MunicipalityPicker from '@/components/municipality-picker';
 import NotificationToggle from '@/components/notification-toggle';
+import PickerMenu from '@/components/picker-menu';
 import ResultsMap from '@/components/results-map';
 import SkipLink from '@/components/skip-link';
+import StateList from '@/components/state-list';
 import StatesTable from '@/components/states-table';
 import WinnerCelebration from '@/components/winner-celebration';
 import type { CelebratedWinner } from '@/components/winner-celebration';
+import { dayLabel, STATUS } from '@/lib/election';
 import {
     formatDate,
+    formatLongDate,
     formatDateTime,
     formatNumber,
     formatPercent,
@@ -21,6 +25,7 @@ import { show as showMunicipality } from '@/routes/municipalities';
 import type {
     Candidate,
     Election,
+    ElectionDay,
     ElectionLevel,
     MapResults,
     MunicipalityDetail,
@@ -33,8 +38,8 @@ import type {
 
 type Props = {
     election: Election;
-    /** Both rounds of the election, each one its own TSE election. */
-    rounds: { round: number; code: number }[];
+    /** Every election day, to choose another one. */
+    days: ElectionDay[];
     office: string;
     offices: OfficeOption[];
     level: ElectionLevel;
@@ -90,7 +95,7 @@ function celebrationTitle(
 
 export default function ResultsIndex({
     election,
-    rounds,
+    days,
     office,
     offices,
     level,
@@ -224,6 +229,14 @@ export default function ResultsIndex({
         });
     }
 
+    const stateHref = (code: string) =>
+        viewHref(election.code, { uf: code.toLowerCase(), municipio: null });
+    const municipalityHref = (code: string) =>
+        viewHref(election.code, { municipio: code });
+    const currentDay = days.find(
+        (day) => day.date === election.date && day.round === election.round,
+    );
+
     function selectMunicipality(ibge: string) {
         setDetail(null);
         void http
@@ -248,143 +261,151 @@ export default function ResultsIndex({
 
             <div className="min-h-screen bg-canvas text-ink">
                 <header className="border-b border-line bg-surface">
-                    <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4">
-                        <div className="flex items-center gap-3">
+                    <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pt-4">
+                        <Link
+                            href={electionsIndex()}
+                            className="flex items-center gap-3 rounded-lg"
+                        >
                             <img
                                 src="/app-icons/icon-192.png"
                                 alt=""
-                                className="size-9 rounded-lg"
+                                className="size-10 rounded-lg"
                             />
-                            <div>
-                                <h1 className="text-lg leading-tight font-bold text-ink">
-                                    Eleições {election.year} · {officeLabel}
-                                    {placeName && ` · ${placeName}`}
-                                </h1>
-                                <p className="text-xs text-muted">
-                                    {formatDate(election.date)} · Dados oficiais
-                                    da divulgação do TSE
-                                </p>
-                            </div>
-                        </div>
-
-                        {rounds.length > 1 && (
-                            <nav
-                                aria-label="Turno"
-                                className="flex rounded-full bg-subtle p-1"
-                            >
-                                {rounds.map((option) => (
-                                    <Link
-                                        key={option.code}
-                                        href={viewHref(option.code)}
-                                        preserveScroll
-                                        aria-current={
-                                            option.code === election.code
-                                                ? 'page'
-                                                : undefined
-                                        }
-                                        className={cn(
-                                            'rounded-full px-4 py-1.5 text-sm font-medium',
-                                            option.code === election.code
-                                                ? 'bg-surface text-ink shadow-sm'
-                                                : 'text-muted hover:text-ink',
-                                        )}
-                                    >
-                                        {option.round}º turno
-                                    </Link>
-                                ))}
-                            </nav>
-                        )}
-
+                            <span className="font-bold">
+                                Resultados das Eleições
+                            </span>
+                        </Link>
                         <div className="ml-auto flex items-center gap-3">
                             <Link
                                 href={electionsIndex()}
-                                className="text-sm font-medium text-muted hover:text-ink"
+                                className="font-semibold text-primary underline-offset-4 hover:underline"
                             >
-                                Outras eleições
+                                Todas as eleições
                             </Link>
                             <NotificationToggle />
                         </div>
                     </div>
 
-                    <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pb-3">
+                    <div className="mx-auto max-w-7xl space-y-4 px-4 py-5">
+                        <div>
+                            <h1 className="text-2xl font-bold sm:text-3xl">
+                                {officeLabel}
+                                {placeName && ` · ${placeName}`}
+                            </h1>
+                            <p className="text-muted">
+                                {dayLabel(election)} ·{' '}
+                                {formatLongDate(election.date)}
+                            </p>
+                        </div>
+
                         <nav
-                            aria-label="Cargo"
-                            className="-mx-1 flex gap-1 overflow-x-auto px-1"
+                            aria-label="Escolha o que ver"
+                            className="flex flex-wrap items-end gap-3"
                         >
-                            {offices.map((option) => (
-                                <Link
-                                    key={option.value}
-                                    href={viewHref(
-                                        option.election ?? election.code,
-                                        { cargo: option.value },
-                                    )}
-                                    preserveScroll
-                                    aria-current={
-                                        option.value === office
-                                            ? 'page'
-                                            : undefined
-                                    }
-                                    className={cn(
-                                        'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
-                                        option.value === office
-                                            ? 'bg-primary text-on-primary'
-                                            : 'text-muted hover:bg-subtle',
-                                    )}
+                            <PickerMenu
+                                label="Eleição"
+                                value={dayLabel(election)}
+                            >
+                                <ul className="space-y-1">
+                                    {days.map((day) => (
+                                        <li key={day.code}>
+                                            <Link
+                                                href={viewHref(day.code)}
+                                                aria-current={
+                                                    day.code ===
+                                                    currentDay?.code
+                                                        ? 'page'
+                                                        : undefined
+                                                }
+                                                className={cn(
+                                                    'flex flex-col gap-1 rounded-lg px-3 py-2 hover:bg-primary-soft',
+                                                    day.code ===
+                                                        currentDay?.code &&
+                                                        'bg-primary-soft',
+                                                )}
+                                            >
+                                                <span className="font-semibold">
+                                                    {dayLabel(day)}
+                                                </span>
+                                                <span className="text-sm text-muted">
+                                                    {formatLongDate(day.date)} ·{' '}
+                                                    {STATUS[day.status].label}
+                                                </span>
+                                            </Link>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </PickerMenu>
+
+                            {!isNationwide && (
+                                <PickerMenu
+                                    label="Estado"
+                                    value={stateName ?? 'Escolha o estado'}
+                                    pending={!state}
+                                    wide
                                 >
-                                    {option.label}
-                                </Link>
-                            ))}
+                                    <StateList
+                                        places={places}
+                                        current={state}
+                                        href={stateHref}
+                                        className="sm:grid-cols-3"
+                                    />
+                                </PickerMenu>
+                            )}
+
+                            {isMunicipal && state && (
+                                <PickerMenu
+                                    label="Município"
+                                    value={
+                                        municipality?.name ??
+                                        'Escolha o município'
+                                    }
+                                    pending={!municipality}
+                                    wide
+                                >
+                                    <MunicipalityPicker
+                                        municipalities={municipalities}
+                                        href={municipalityHref}
+                                    />
+                                </PickerMenu>
+                            )}
                         </nav>
 
-                        {!isNationwide && state && (
-                            <select
-                                value={state ?? ''}
-                                onChange={(event) =>
-                                    router.visit(
-                                        viewHref(election.code, {
-                                            uf: event.target.value.toLowerCase(),
-                                            municipio: null,
-                                        }),
-                                        { preserveScroll: true },
-                                    )
-                                }
-                                aria-label="Estado"
-                                className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
+                        <nav aria-label="Cargo">
+                            <p
+                                aria-hidden="true"
+                                className="mb-1 text-sm text-muted"
                             >
-                                {places.map((place) => (
-                                    <option key={place.code} value={place.code}>
-                                        {place.name}
-                                        {!place.is_final &&
-                                            ` (${formatPercent(place.counted_percent)})`}
-                                    </option>
+                                Cargo
+                            </p>
+                            <ul className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                                {offices.map((option) => (
+                                    <li key={option.value} className="shrink-0">
+                                        <Link
+                                            href={viewHref(
+                                                option.election ??
+                                                    election.code,
+                                                { cargo: option.value },
+                                            )}
+                                            preserveScroll
+                                            aria-current={
+                                                option.value === office
+                                                    ? 'page'
+                                                    : undefined
+                                            }
+                                            className={cn(
+                                                'flex min-h-11 items-center rounded-xl border-2 px-4 font-semibold whitespace-nowrap',
+                                                option.value === office
+                                                    ? 'border-primary bg-primary text-on-primary'
+                                                    : 'border-line-strong hover:border-primary hover:bg-primary-soft',
+                                            )}
+                                        >
+                                            {option.label}
+                                        </Link>
+                                    </li>
                                 ))}
-                            </select>
-                        )}
-
-                        {municipality && (
-                            <select
-                                value={municipality.code}
-                                onChange={(event) =>
-                                    router.visit(
-                                        viewHref(election.code, {
-                                            municipio: event.target.value,
-                                        }),
-                                        { preserveScroll: true },
-                                    )
-                                }
-                                aria-label="Município"
-                                className="max-w-56 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
-                            >
-                                {municipalities.map((option) => (
-                                    <option
-                                        key={option.code}
-                                        value={option.code}
-                                    >
-                                        {option.name}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
+                            </ul>
+                        </nav>
                     </div>
                 </header>
 
@@ -410,24 +431,11 @@ export default function ResultsIndex({
                                 Veja o resultado de {officeLabel} no{' '}
                                 {election.round}º turno de {election.year}.
                             </p>
-                            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                                {places.map((place) => (
-                                    <li key={place.code}>
-                                        <Link
-                                            href={viewHref(election.code, {
-                                                uf: place.code.toLowerCase(),
-                                                municipio: null,
-                                            })}
-                                            className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5 text-sm font-medium text-ink hover:border-primary hover:bg-primary-soft"
-                                        >
-                                            <span className="w-7 text-xs font-bold text-muted">
-                                                {place.code}
-                                            </span>
-                                            {place.name}
-                                        </Link>
-                                    </li>
-                                ))}
-                            </ul>
+                            <StateList
+                                places={places}
+                                href={stateHref}
+                                className="sm:grid-cols-3 lg:grid-cols-5"
+                            />
                         </section>
                     ) : pickMunicipality ? (
                         <section className="rounded-2xl border border-line bg-surface p-5">
@@ -440,11 +448,7 @@ export default function ResultsIndex({
                             </p>
                             <MunicipalityPicker
                                 municipalities={municipalities}
-                                href={(code) =>
-                                    viewHref(election.code, {
-                                        municipio: code,
-                                    })
-                                }
+                                href={municipalityHref}
                             />
                         </section>
                     ) : !summary ? (

@@ -86,7 +86,7 @@ class ResultsController extends Controller
 
         return Inertia::render('results/index', [
             'election' => $election->toPublicArray(),
-            'rounds' => $this->rounds($election),
+            'days' => Election::days(),
             'office' => $office->value,
             // Where the office is elected: what the visitor has to pick.
             'level' => match (true) {
@@ -159,21 +159,6 @@ class ResultsController extends Controller
         return $election === null
             ? redirect()->route('home')
             : redirect()->route('elections.show', [$election, ...$request->only(['cargo', 'uf'])]);
-    }
-
-    /**
-     * Rounds of the election, linking each to its own election.
-     *
-     * @return list<array{round: int, code: int}>
-     */
-    private function rounds(Election $election): array
-    {
-        $first = $election->firstRound();
-
-        return array_values(array_map(
-            fn (Election $round): array => ['round' => $round->round, 'code' => $round->tse_code],
-            array_filter([$first, $first?->secondRound()]),
-        ));
     }
 
     /**
