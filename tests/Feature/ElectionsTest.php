@@ -9,6 +9,7 @@ use App\Models\Municipality;
 use App\Models\Result;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 
 /**
  * Minimal TSE result file of a municipal office.
@@ -167,4 +168,74 @@ test('a municipal runoff downloads only the municipalities the TSE lists, withou
     expect($result->scope_code)->toBe('71072')
         ->and(Candidate::query()->where('tse_sequence', '250000000001')->value('election_code'))->toBe(619);
     Http::assertSentCount(1);
+});
+
+test('the archive download discovers and downloads every past election, waiting out a 429', function () {
+    Http::preventStrayRequests();
+    Sleep::fake(syncWithCarbon: true);
+    $this->travelTo('2026-03-01 10:00:00');
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    $base = 'https://resultados.tse.jus.br/oficial/ele2024/619/dados/sp';
+    Http::fake([
+        'resultados.tse.jus.br/oficial/comum/config/ele-c.json' => Http::response(['pl' => [
+            ['cd' => '452', 'c' => 'ele2024', 'dt' => '06/10/2024', 'dtlim' => '06/10/2028', 'e' => [
+                ['cd' => '619', 'cdt2' => '620', 'nm' => 'Eleição Ordinária Municipal - 2024 1º Turno', 't' => '1', 'tp' => '3', 'abr' => [
+                    ['cd' => 'br', 'cp' => [['cd' => '11']]],
+                ]],
+            ]],
+        ]]),
+        "{$base}/sp-e000619-ab.json" => Http::sequence()
+            ->push('', 429)
+            ->push(['abr' => [['tpabr' => 'mun', 'cdabr' => '71072', 'and' => 'f', 'dt' => '06/10/2024', 'ht' => '22:00:00', 's' => ['st' => '100']]]]),
+        "{$base}/sp71072-c0011-e000619-u.json" => Http::response(municipalResult(['250000000001' => ['15', 600], '250000000002' => ['45', 300]])),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:baixar-base')
+        ->expectsOutputToContain('Aguardando para continuar')
+        ->expectsOutputToContain('1 de 1 eleição(ões) concluída(s)')
+        ->assertSuccessful();
+
+    expect(Result::query()->forElection(619, Office::Mayor, Result::SCOPE_MUNICIPALITY)->sole()->scope_code)->toBe('71072');
+
+    $this->artisan('tse:baixar-base')->expectsOutputToContain('a base já está completa')->assertSuccessful();
+});
+
+test('a stored result is never replaced by an older or partial one', function () {
+    Http::preventStrayRequests();
+    $this->travelTo('2026-03-01 10:00:00');
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    Election::factory()->municipal2024()->create();
+    $base = 'https://resultados.tse.jus.br/oficial/ele2024/619/dados/sp';
+    $progress = ['abr' => [['tpabr' => 'mun', 'cdabr' => '71072', 'and' => 'f', 'dt' => '06/10/2024', 'ht' => '23:00:00', 's' => ['st' => '100']]]];
+    Http::fake([
+        "{$base}/sp-e000619-ab.json" => Http::response($progress),
+        "{$base}/sp71072-c0011-e000619-u.json" => Http::sequence()
+            ->push(municipalResult(['250000000001' => ['15', 600]], time: '23:00:00'))
+            ->push([...municipalResult(['250000000001' => ['15', 10]], time: '21:00:00'), 'and' => 'p']),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:importar')->assertSuccessful();
+    $this->artisan('tse:importar', ['--eleicao' => [619]])->assertSuccessful();
+
+    $result = Result::query()->forElection(619, Office::Mayor, Result::SCOPE_MUNICIPALITY)->sole();
+    expect($result->is_final)->toBeTrue()
+        ->and(array_values($result->votes))->toBe([600]);
+});
+
+test('offices listed before are kept when the index stops listing them', function () {
+    Http::preventStrayRequests();
+    Election::factory()->municipal2024()->create();
+    Http::fake(['resultados.tse.jus.br/oficial/comum/config/ele-c.json' => Http::response(['pl' => [
+        ['cd' => '452', 'c' => 'ele2024', 'dt' => '06/10/2024', 'dtlim' => '06/10/2028', 'e' => [
+            ['cd' => '619', 'cdt2' => '620', 'nm' => 'Eleição Ordinária Municipal - 2024 1º Turno', 't' => '1', 'tp' => '3', 'abr' => [
+                ['cd' => 'br', 'cp' => [['cd' => '11']]],
+            ]],
+        ]],
+    ]])]);
+
+    $this->artisan('tse:descobrir')->assertSuccessful();
+
+    expect(Election::query()->where('tse_code', 619)->sole()->offices->all())->toBe([Office::Mayor, Office::Councillor]);
 });

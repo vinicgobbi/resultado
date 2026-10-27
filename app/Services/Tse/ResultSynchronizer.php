@@ -461,17 +461,41 @@ class ResultSynchronizer
     }
 
     /**
+     * Whether a downloaded result replaces the stored one. What is stored is
+     * never lost to a worse file: a final result is not replaced by a partial
+     * one, nor a result by an older one (a full sync rewrites equal ones).
+     */
+    private function replaces(ResultPayload $payload, ?Result $stored): bool
+    {
+        if ($stored === null) {
+            return true;
+        }
+
+        if ($stored->is_final && ! $payload->isFinal) {
+            return false;
+        }
+
+        $storedAt = $stored->tse_updated_at?->format('Y-m-d H:i:s');
+        $downloadedAt = $payload->updatedAt?->format('Y-m-d H:i:s');
+
+        return match (true) {
+            $downloadedAt === null => $storedAt === null,
+            $storedAt === null => true,
+            $this->full => $downloadedAt >= $storedAt,
+            default => $downloadedAt > $storedAt,
+        };
+    }
+
+    /**
      * Totalization time of the stored results of a scope, keyed by scope code
      * (numeric codes become integer keys).
      *
-     * @param  list<string>|null  $scopeCodes  only these places
      * @return array<array-key, string|null>
      */
-    private function storedUpdates(int $electionCode, Office $office, string $scope, ?array $scopeCodes = null): array
+    private function storedUpdates(int $electionCode, Office $office, string $scope): array
     {
         return Result::query()
             ->forElection($electionCode, $office, $scope)
-            ->when($scopeCodes !== null, fn ($query) => $query->whereIn('scope_code', $scopeCodes))
             ->pluck('tse_updated_at', 'scope_code')
             ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'))
             ->all();
@@ -521,13 +545,16 @@ class ResultSynchronizer
      */
     private function storeResults(Election $election, Office $office, string $scope, array $payloads): void
     {
-        if ($payloads !== [] && ! $this->full) {
-            $storedUpdates = $this->storedUpdates($election->tse_code, $office, $scope, array_map(strval(...), array_keys($payloads)));
+        if ($payloads !== []) {
+            $stored = Result::query()
+                ->forElection($election->tse_code, $office, $scope)
+                ->whereIn('scope_code', array_map(strval(...), array_keys($payloads)))
+                ->get(['scope_code', 'tse_updated_at', 'is_final'])
+                ->keyBy('scope_code');
 
             $payloads = array_filter(
                 $payloads,
-                fn (ResultPayload $payload, int|string $scopeCode): bool => $payload->updatedAt === null
-                    || ($storedUpdates[$scopeCode] ?? null) !== $payload->updatedAt->format('Y-m-d H:i:s'),
+                fn (ResultPayload $payload, int|string $scopeCode): bool => $this->replaces($payload, $stored->get($scopeCode)),
                 ARRAY_FILTER_USE_BOTH,
             );
         }

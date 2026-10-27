@@ -11,7 +11,8 @@ use Illuminate\Support\Carbon;
  * Registers the regular elections listed in the TSE elections index
  * ("ele-c.json"); supplementary elections and popular consultations are left
  * out. The TSE only keeps the current cycles there, so what is registered
- * (and imported) here is what remains once a cycle is gone.
+ * (and imported) here is what remains once a cycle is gone: elections that
+ * leave the index are never removed.
  */
 class ElectionCatalog
 {
@@ -38,7 +39,9 @@ class ElectionCatalog
                     continue;
                 }
 
-                Election::query()->updateOrCreate(['tse_code' => (int) $entry['cd']], [
+                $election = Election::query()->firstOrNew(['tse_code' => (int) $entry['cd']]);
+
+                $election->fill([
                     'cycle' => (string) $pleito['c'],
                     'date' => $date->toDateString(),
                     'round' => (int) ($entry['t'] ?? 1),
@@ -46,11 +49,16 @@ class ElectionCatalog
                     'name' => trim((string) $entry['nm']),
                     'second_round_code' => filled($entry['cdt2'] ?? null) ? (int) $entry['cdt2'] : null,
                     'places' => $this->places($entry['abr'] ?? []),
-                    'offices' => $offices,
+                    // Offices listed before are kept, even if the index stops
+                    // listing them.
+                    'offices' => array_values(array_filter(
+                        Office::cases(),
+                        fn (Office $office): bool => in_array($office, $offices, true) || ($election->exists && $election->offices->contains($office)),
+                    )),
                     'available_until' => filled($pleito['dtlim'] ?? null)
                         ? Carbon::createFromFormat('d/m/Y', (string) $pleito['dtlim'])?->toDateString()
                         : null,
-                ]);
+                ])->save();
 
                 $count++;
             }
