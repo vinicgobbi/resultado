@@ -5,7 +5,7 @@ import CountProgress from '@/components/count-progress';
 import HowToRead from '@/components/how-to-read';
 import MunicipalityPanel from '@/components/municipality-panel';
 import MunicipalityPicker from '@/components/municipality-picker';
-import NotificationToggle from '@/components/notification-toggle';
+import FollowButton from '@/components/follow-button';
 import PickerMenu from '@/components/picker-menu';
 import ResultsMap from '@/components/results-map';
 import RunoffNotice from '@/components/runoff-notice';
@@ -21,6 +21,7 @@ import { formatLongDate, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { index as electionsIndex, show } from '@/routes/elections';
 import { show as showMunicipality } from '@/routes/municipalities';
+import { index as notificationsIndex } from '@/routes/notifications';
 import type {
     Candidate,
     Election,
@@ -322,7 +323,13 @@ export default function ResultsIndex({
                             >
                                 Todas as eleições
                             </Link>
-                            <NotificationToggle />
+                            <Link
+                                href={notificationsIndex()}
+                                className="flex min-h-11 items-center gap-1.5 rounded-full border-2 border-line-strong px-4 font-semibold hover:border-primary hover:bg-primary-soft"
+                            >
+                                <span aria-hidden="true">🔔</span>
+                                Minhas notificações
+                            </Link>
                         </div>
                     </div>
 
@@ -408,6 +415,21 @@ export default function ResultsIndex({
                                         href={municipalityHref}
                                     />
                                 </PickerMenu>
+                            )}
+
+                            {placeChosen && (
+                                <FollowButton
+                                    key={`${office}-${state}-${municipality?.code}`}
+                                    office={office}
+                                    scopeCode={
+                                        isNationwide
+                                            ? 'br'
+                                            : isMunicipal
+                                              ? municipality!.code
+                                              : state!.toLowerCase()
+                                    }
+                                    label={`${officeLabel} · ${placeName ?? 'Brasil'}`}
+                                />
                             )}
                         </nav>
 

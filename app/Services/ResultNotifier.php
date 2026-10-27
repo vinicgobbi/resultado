@@ -1,0 +1,192 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\NotificationCategory;
+use App\Models\Candidate;
+use App\Models\Election;
+use App\Models\PushFollow;
+use App\Models\PushMessage;
+use App\Models\PushSubscription;
+use App\Models\Result;
+use App\Services\Tse\SyncEvent;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * Turns what happened to the followed results into a message for each
+ * follower who wants that kind of notification, then wakes their browsers.
+ */
+class ResultNotifier
+{
+    /** Names listed in a message before "e mais N". */
+    private const int LISTED_NAMES = 3;
+
+    public function __construct(
+        private readonly RaceOutcome $outcome,
+        private readonly WebPush $webPush,
+    ) {}
+
+    /**
+     * @param  list<SyncEvent>  $events
+     * @return int browsers woken up
+     */
+    public function notify(array $events): int
+    {
+        $subscriptionIds = [];
+
+        foreach ($events as $event) {
+            $follows = $this->followers($event);
+
+            if ($follows === []) {
+                continue;
+            }
+
+            $message = $this->message($event);
+
+            if ($message === null) {
+                continue;
+            }
+
+            $now = now();
+
+            PushMessage::query()->insert(array_map(fn (PushFollow $follow): array => [
+                'push_subscription_id' => $follow->push_subscription_id,
+                ...$message,
+                'created_at' => $now,
+            ], $follows));
+
+            if ($event->category === NotificationCategory::Updates) {
+                PushFollow::query()
+                    ->whereKey(array_map(fn (PushFollow $follow): int => $follow->id, $follows))
+                    ->update(['last_update_notified_at' => $now]);
+            }
+
+            foreach ($follows as $follow) {
+                $subscriptionIds[$follow->push_subscription_id] = true;
+            }
+        }
+
+        return $this->webPush->send(PushSubscription::query()->whereKey(array_keys($subscriptionIds))->get());
+    }
+
+    /**
+     * Follows of the result that want this kind of notification; new results
+     * at most once every few minutes.
+     *
+     * @return array<int, PushFollow>
+     */
+    private function followers(SyncEvent $event): array
+    {
+        return PushFollow::query()
+            ->where('office', $event->office)
+            ->where('scope_code', $event->scopeCode)
+            ->where($event->category->column(), true)
+            ->when($event->category === NotificationCategory::Updates, fn (Builder $query) => $query->where(
+                fn (Builder $query) => $query
+                    ->whereNull('last_update_notified_at')
+                    ->orWhere('last_update_notified_at', '<=', now()->subMinutes(PushFollow::UPDATE_EVERY_MINUTES)),
+            ))
+            ->get()
+            ->all();
+    }
+
+    /**
+     * @return array{title: string, body: string, url: string, tag: string}|null
+     */
+    private function message(SyncEvent $event): ?array
+    {
+        $election = Election::query()->where('tse_code', $event->electionCode)->first();
+        $result = Result::query()
+            ->forElection($event->electionCode, $event->office, $event->office->electedScope())
+            ->where('scope_code', $event->scopeCode)
+            ->first();
+
+        if ($election === null || $result === null) {
+            return null;
+        }
+
+        $place = new ResultPlace($event->office, $event->scopeCode);
+        $heading = $place->label();
+        $counted = "{$this->percent($result->counted_percent)} apurado";
+        $winners = array_column($this->outcome->winners($result, $event->office), 'candidate_id');
+        $runoff = $election->round === 1 ? $this->outcome->runoff($result, $event->office) : null;
+        $names = Candidate::query()
+            ->whereKey(array_keys($result->votes))
+            ->pluck('ballot_name', 'id')
+            ->all();
+        $leaders = $this->leaders($result, $names);
+
+        [$title, $body] = match ($event->category) {
+            NotificationCategory::Updates => ["{$heading}: {$counted}", $leaders],
+            NotificationCategory::Decided => $winners !== []
+                ? ["🎉 {$heading}: {$this->list($winners, $names)} ".(count($winners) > 1 ? 'eleitos' : 'eleito'), "Matematicamente, com {$counted}."]
+                : ["🗳️ {$heading}: vai ter 2º turno", "{$this->runoffPlaces($runoff['candidate_ids'] ?? [], $names)} {$counted}."],
+            NotificationCategory::Final => ["✔️ {$heading}: apuração encerrada", match (true) {
+                $winners !== [] => (count($winners) > 1 ? 'Eleitos: ' : 'Eleito: ').$this->list($winners, $names).'.',
+                $runoff !== null && count($runoff['candidate_ids']) === 2 => "{$this->list($runoff['candidate_ids'], $names)} vão ao 2º turno.",
+                default => $leaders,
+            }],
+        };
+
+        return [
+            'title' => mb_substr($title, 0, 255),
+            'body' => mb_substr($body, 0, 500),
+            'url' => $place->url($election),
+            // A newer message of the same kind replaces the older one.
+            'tag' => "{$event->office->value}-{$event->scopeCode}-{$event->category->value}",
+        ];
+    }
+
+    /**
+     * "TARCÍSIO 52,10% × HADDAD 40,20%": the first two.
+     *
+     * @param  array<int, string>  $names
+     */
+    private function leaders(Result $result, array $names): string
+    {
+        $validVotes = max($result->valid_votes, array_sum($result->votes));
+
+        return collect($result->sortedVotes())
+            ->take(2)
+            ->map(fn (int $votes, int $candidateId): string => ($names[$candidateId] ?? '?').' '.$this->percent($validVotes > 0 ? $votes / $validVotes * 100 : 0))
+            ->implode(' × ');
+    }
+
+    /**
+     * @param  list<int>  $qualified
+     * @param  array<int, string>  $names
+     */
+    private function runoffPlaces(array $qualified, array $names): string
+    {
+        return match (count($qualified)) {
+            2 => "{$this->list($qualified, $names)} vão disputá-lo.",
+            1 => "{$this->list($qualified, $names)} já garantiu vaga; a outra está em disputa.",
+            default => 'As duas vagas ainda estão em disputa.',
+        };
+    }
+
+    /**
+     * "A, B e C", or "A, B, C e mais 4".
+     *
+     * @param  list<int>  $candidateIds
+     * @param  array<int, string>  $names
+     */
+    private function list(array $candidateIds, array $names): string
+    {
+        $listed = array_map(fn (int $candidateId): string => $names[$candidateId] ?? '?', array_slice($candidateIds, 0, self::LISTED_NAMES));
+        $more = count($candidateIds) - count($listed);
+
+        if ($more > 0) {
+            return implode(', ', $listed)." e mais {$more}";
+        }
+
+        $last = array_pop($listed);
+
+        return $listed === [] ? (string) $last : implode(', ', $listed)." e {$last}";
+    }
+
+    private function percent(float $value): string
+    {
+        return number_format($value, 2, ',', '.').'%';
+    }
+}

@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CandidatePhotoController;
 use App\Http\Controllers\ElectionController;
 use App\Http\Controllers\MapController;
+use App\Http\Controllers\PushFollowController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ResultsController;
 use Illuminate\Support\Facades\Route;
@@ -19,10 +20,15 @@ Route::get('/eleicoes/{election}/municipios/{municipality:ibge_code}', [MapContr
 Route::get('/resumo.json', [ResultsController::class, 'summary'])->name('results.summary');
 Route::get('/mapa/geometria.json', [MapController::class, 'geometry'])->name('map.geometry');
 Route::get('/candidatos/{candidate}/foto', CandidatePhotoController::class)->name('candidates.photo');
+Route::get('/notificacoes', [PushFollowController::class, 'index'])->name('notifications.index');
+Route::get('/notificacoes/pendentes', [PushFollowController::class, 'pending'])->middleware('throttle:60,1')->name('notifications.pending');
 
 Route::middleware('throttle:30,1')->group(function () {
     Route::post('/push/inscricoes', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
     Route::delete('/push/inscricoes', [PushSubscriptionController::class, 'destroy'])->name('push-subscriptions.destroy');
+    Route::post('/notificacoes/seguindo', [PushFollowController::class, 'following'])->name('notifications.following');
+    Route::put('/notificacoes/seguir', [PushFollowController::class, 'update'])->name('notifications.follow');
+    Route::delete('/notificacoes/seguir', [PushFollowController::class, 'destroy'])->name('notifications.unfollow');
 });
 
 Route::middleware('guest')->group(function () {

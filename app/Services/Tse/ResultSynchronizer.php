@@ -2,12 +2,15 @@
 
 namespace App\Services\Tse;
 
+use App\Enums\NotificationCategory;
 use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
 use App\Models\Election;
 use App\Models\Municipality;
+use App\Models\PushFollow;
 use App\Models\Result;
+use App\Services\RaceOutcome;
 use App\Services\ResultsPresenter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -73,13 +76,28 @@ class ResultSynchronizer
 
     private SyncProgress $progress;
 
+    /**
+     * Results someone follows, as "office|scope code" keys.
+     *
+     * @var array<string, bool>
+     */
+    private array $followed = [];
+
+    /**
+     * What happened to the followed results in the current sync.
+     *
+     * @var list<SyncEvent>
+     */
+    private array $events = [];
+
     public function __construct(
         private readonly TseClient $client,
         private readonly ResultsPresenter $presenter,
+        private readonly RaceOutcome $outcome,
     ) {}
 
     /**
-     * @return array{states: int, municipalities: int, counted_percent: float|null, country_changed: bool, complete: bool, failures: int}
+     * @return array{states: int, municipalities: int, counted_percent: float|null, country_changed: bool, complete: bool, failures: int, events: list<SyncEvent>}
      *
      * @throws RateLimitedException
      */
@@ -91,6 +109,12 @@ class ResultSynchronizer
         $this->seen = 0;
         $this->changed = false;
         $this->full = $full;
+        $this->events = [];
+        $this->followed = PushFollow::query()
+            ->distinct()
+            ->get(['office', 'scope_code'])
+            ->mapWithKeys(fn (PushFollow $follow): array => ["{$follow->office->value}|{$follow->scope_code}" => true])
+            ->all();
         $this->candidateElectionCode = $election->firstRound()->tse_code ?? $election->tse_code;
         $offices = array_values($election->offices->all());
 
@@ -160,6 +184,7 @@ class ResultSynchronizer
             'country_changed' => $countryChanged,
             'complete' => $complete,
             'failures' => $failures,
+            'events' => $this->events,
         ];
     }
 
@@ -628,6 +653,16 @@ class ResultSynchronizer
 
         $this->changed = true;
 
+        // Followed results where the office is elected: compared before and
+        // after, to notify what happened to them.
+        $watched = $scope === $office->electedScope()
+            ? array_values(array_filter(
+                array_map(strval(...), array_keys($payloads)),
+                fn (string $scopeCode): bool => isset($this->followed["{$office->value}|{$scopeCode}"]),
+            ))
+            : [];
+        $before = $this->storedResults($election, $office, $scope, $watched);
+
         $now = now();
         $rows = [];
 
@@ -688,5 +723,52 @@ class ResultSynchronizer
                 ]);
             }
         });
+
+        foreach ($this->storedResults($election, $office, $scope, $watched) as $scopeCode => $after) {
+            $this->recordEvents($election, $office, $before[$scopeCode] ?? null, $after);
+        }
+    }
+
+    /**
+     * @param  list<string>  $scopeCodes
+     * @return array<string, Result>
+     */
+    private function storedResults(Election $election, Office $office, string $scope, array $scopeCodes): array
+    {
+        if ($scopeCodes === []) {
+            return [];
+        }
+
+        return Result::query()
+            ->forElection($election->tse_code, $office, $scope)
+            ->whereIn('scope_code', $scopeCodes)
+            ->get()
+            ->keyBy('scope_code')
+            ->all();
+    }
+
+    /**
+     * What changed in a followed result: new results, something decided
+     * (a winner, a runoff or one more place in it) or the end of the count,
+     * which already tells everything decided.
+     */
+    private function recordEvents(Election $election, Office $office, ?Result $before, Result $after): void
+    {
+        $event = fn (NotificationCategory $category): SyncEvent => new SyncEvent($category, $election->tse_code, $office, $after->scope_code);
+
+        if ($after->is_final && ! $before?->is_final) {
+            $this->events[] = $event(NotificationCategory::Final);
+
+            return;
+        }
+
+        $isFirstRound = $election->round === 1;
+        $decided = $this->outcome->decidedKey($after, $office, $isFirstRound);
+
+        if ($decided !== '' && ($before === null || $decided !== $this->outcome->decidedKey($before, $office, $isFirstRound))) {
+            $this->events[] = $event(NotificationCategory::Decided);
+        }
+
+        $this->events[] = $event(NotificationCategory::Updates);
     }
 }

@@ -79,8 +79,37 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-self.addEventListener('push', (event) => {
-    event.waitUntil(
+/**
+ * Messages waiting for this browser, looked up by the SHA-256 of its push
+ * endpoint (pushes carry no content).
+ */
+async function pendingMessages() {
+    const subscription = await self.registration.pushManager.getSubscription();
+
+    if (!subscription) {
+        return [];
+    }
+
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(subscription.endpoint),
+    );
+    const hash = [...new Uint8Array(digest)]
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    const response = await fetch(
+        `/notificacoes/pendentes?inscricao=${hash}`,
+        { cache: 'no-store' },
+    );
+
+    return response.ok ? response.json() : [];
+}
+
+/**
+ * The national summary, for a push without waiting messages.
+ */
+function showSummary() {
+    return (
         fetch('/resumo.json', { cache: 'no-store' })
             .then((response) => response.json())
             .then((summary) => {
@@ -136,6 +165,32 @@ self.addEventListener('push', (event) => {
                     tag: 'apuracao-brasil',
                     data: { url: '/' },
                 }),
+            )
+    );
+}
+
+self.addEventListener('push', (event) => {
+    event.waitUntil(
+        pendingMessages()
+            .catch(() => [])
+            .then((messages) =>
+                messages.length === 0
+                    ? showSummary()
+                    : Promise.all(
+                          messages.map((message) =>
+                              self.registration.showNotification(
+                                  message.title,
+                                  {
+                                      body: message.body,
+                                      icon: '/app-icons/icon-192.png',
+                                      badge: '/app-icons/icon-192.png',
+                                      tag: message.tag,
+                                      renotify: true,
+                                      data: { url: message.url },
+                                  },
+                              ),
+                          ),
+                      ),
             ),
     );
 });
@@ -152,13 +207,17 @@ self.addEventListener('notificationclick', (event) => {
                         new URL(client.url).origin === self.location.origin,
                 );
 
+                const url = event.notification.data?.url ?? '/';
+
                 if (existing) {
-                    return existing.focus();
+                    // Only windows this worker controls can be navigated.
+                    return existing
+                        .focus()
+                        .then((client) => client.navigate(url))
+                        .catch(() => self.clients.openWindow(url));
                 }
 
-                return self.clients.openWindow(
-                    event.notification.data?.url ?? '/',
-                );
+                return self.clients.openWindow(url);
             }),
     );
 });

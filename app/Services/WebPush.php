@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PushSubscription;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -12,7 +13,7 @@ use RuntimeException;
  * Minimal Web Push sender using VAPID authentication.
  *
  * Messages are sent without payload, so no content encryption is needed:
- * the service worker wakes up and fetches the latest summary by itself.
+ * the service worker wakes up and fetches its waiting messages by itself.
  */
 class WebPush
 {
@@ -48,19 +49,15 @@ class WebPush
     }
 
     /**
-     * Send a push message to every subscription, removing expired ones.
+     * Wake the given subscriptions up, removing expired ones. Each service
+     * worker then fetches its own waiting messages.
      *
-     * @return int number of subscriptions that accepted the message
+     * @param  Collection<int, PushSubscription>  $subscriptions
+     * @return int number of subscriptions that accepted the push
      */
-    public function broadcast(int $ttl = 600): int
+    public function send(Collection $subscriptions, int $ttl = 600): int
     {
-        if (! self::isConfigured()) {
-            return 0;
-        }
-
-        $subscriptions = PushSubscription::query()->get(['id', 'endpoint']);
-
-        if ($subscriptions->isEmpty()) {
+        if (! self::isConfigured() || $subscriptions->isEmpty()) {
             return 0;
         }
 

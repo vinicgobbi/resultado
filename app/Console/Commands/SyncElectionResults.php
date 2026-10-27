@@ -33,7 +33,7 @@ class SyncElectionResults extends Command
             return self::SUCCESS;
         }
 
-        $countryChanged = false;
+        $events = [];
         $progress = new ConsoleSyncProgress($this);
 
         foreach ($elections as $election) {
@@ -55,16 +55,16 @@ class SyncElectionResults extends Command
                 return self::FAILURE;
             }
 
-            $countryChanged = $countryChanged || $totals['country_changed'];
+            $events = [...$events, ...$totals['events']];
             $progress->summary($totals, microtime(true) - $started);
         }
 
         $this->newLine();
 
-        if ($countryChanged && ! $this->option('sem-notificacao') && WebPush::isConfigured()) {
-            SendResultsNotification::dispatch();
+        if ($events !== [] && ! $this->option('sem-notificacao') && WebPush::isConfigured()) {
+            SendResultsNotification::dispatch($events);
 
-            $this->components->info('Notificação push enfileirada.');
+            $this->components->info('Notificações push enfileiradas.');
         }
 
         return self::SUCCESS;

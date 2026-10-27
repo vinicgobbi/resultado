@@ -6,6 +6,7 @@ use App\Jobs\SendResultsNotification;
 use App\Models\Candidate;
 use App\Models\Election;
 use App\Models\Municipality;
+use App\Models\PushMessage;
 use App\Models\PushSubscription;
 use App\Models\Result;
 use App\Services\Tse\ResultSynchronizer;
@@ -155,10 +156,23 @@ test('sync keeps admin colors when candidates are refreshed', function () {
         ->ballot_name->toBe('LULA');
 });
 
-test('a push notification is sent only when the national result changes', function () {
+/**
+ * A browser subscribed to push notifications, following a result.
+ *
+ * @param  array<string, mixed>  $follow
+ */
+function followingBrowser(string $endpoint, array $follow = []): PushSubscription
+{
+    $subscription = PushSubscription::create(['endpoint' => $endpoint, 'endpoint_hash' => PushSubscription::hashEndpoint($endpoint)]);
+    $subscription->follows()->create(['office' => Office::President, 'scope_code' => 'br', ...$follow]);
+
+    return $subscription;
+}
+
+test('a push notification is sent only when a followed result changes', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    PushSubscription::create(['endpoint' => 'https://push.example.com/abc', 'endpoint_hash' => PushSubscription::hashEndpoint('https://push.example.com/abc')]);
+    followingBrowser('https://push.example.com/abc');
     $pushes = fn (): int => Http::recorded(fn (Request $request): bool => $request->url() === 'https://push.example.com/abc')->count();
 
     fakeTse(countryTime: '20:00:00', overrides: ['push.example.com/*' => Http::response('', 201)]);
@@ -173,10 +187,121 @@ test('a push notification is sent only when the national result changes', functi
     expect($pushes())->toBe(1);
 });
 
+test('a followed result gets a message about its new results', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc');
+    // Still open: 2 × 520 is not more than 1000 valid votes + 100 voters left.
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 520, '280002542548' => 480])),
+        'push.example.com/*' => Http::response('', 201),
+    ]);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(PushMessage::query()->sole()->only(['title', 'body', 'url', 'tag']))->toBe([
+        'title' => 'Presidente · Brasil: 50,00% apurado',
+        'body' => 'FLAVIO BOLSONARO 52,00% × LULA 48,00%',
+        'url' => '/eleicoes/6258?cargo=presidente',
+        'tag' => 'presidente-br-atualizacao',
+    ]);
+});
+
+test('a result that becomes mathematically decided notifies it once', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc', ['notify_updates' => false]);
+    // 900 valid votes and 100 voters left: 2 × 700 > 900 + 100.
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 700, '280002542548' => 200])),
+        'push.example.com/*' => Http::response('', 201),
+    ]);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(PushMessage::query()->sole()->only(['title', 'body']))->toBe([
+        'title' => '🎉 Presidente · Brasil: FLAVIO BOLSONARO eleito',
+        'body' => 'Matematicamente, com 50,00% apurado.',
+    ]);
+
+    Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(PushMessage::query()->count())->toBe(1);
+});
+
+test('the end of the count tells who was elected', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc');
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response([
+            ...tseResult(['280002551544' => 400, '280002542548' => 600], counted: '100', elected: '280002542548'),
+            'and' => 'f',
+        ]),
+        'push.example.com/*' => Http::response('', 201),
+    ]);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(PushMessage::query()->sole()->only(['title', 'body']))->toBe([
+        'title' => '✔️ Presidente · Brasil: apuração encerrada',
+        'body' => 'Eleito: LULA.',
+    ]);
+});
+
+test('new results of a followed result are notified at most every ten minutes', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc');
+    fakeTse(overrides: ['push.example.com/*' => Http::response('', 201)]);
+    $changeCountry = fn () => Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    PushMessage::query()->delete();
+
+    $this->travel(5)->minutes();
+    $changeCountry();
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    expect(PushMessage::query()->count())->toBe(0);
+
+    $this->travel(6)->minutes();
+    $changeCountry();
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+    expect(PushMessage::query()->count())->toBe(1);
+});
+
+test('nothing is sent for kinds of notification the follower turned off', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc', ['notify_updates' => false]);
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 520, '280002542548' => 480])),
+        'push.example.com/*' => Http::response('', 201),
+    ]);
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    expect(PushMessage::query()->count())->toBe(0);
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'push.example.com'));
+});
+
+test('a sync without followers queues no notification', function () {
+    Http::preventStrayRequests();
+    Queue::fake();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    fakeTse();
+
+    $this->artisan('tse:sincronizar')->assertSuccessful();
+
+    Queue::assertNotPushed(SendResultsNotification::class);
+});
+
 test('the push notification is queued instead of holding up the sync', function () {
     Http::preventStrayRequests();
     Queue::fake();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://push.example.com/abc');
     fakeTse();
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -210,7 +335,7 @@ test('a sync caches the results under a new version only when something changed'
 test('expired push subscriptions are removed', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    PushSubscription::create(['endpoint' => 'https://push.example.com/gone', 'endpoint_hash' => PushSubscription::hashEndpoint('https://push.example.com/gone')]);
+    followingBrowser('https://push.example.com/gone');
 
     fakeTse(overrides: ['push.example.com/*' => Http::response('', 410)]);
     $this->artisan('tse:sincronizar')->assertSuccessful();

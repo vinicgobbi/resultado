@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use App\Models\Result;
+
 enum Office: string
 {
     case President = 'presidente';
@@ -78,6 +80,19 @@ enum Office: string
     public function isNationwide(): bool
     {
         return $this === self::President;
+    }
+
+    /**
+     * Result scope where the office is elected: the country, each state or
+     * each municipality.
+     */
+    public function electedScope(): string
+    {
+        return match (true) {
+            $this->isNationwide() => Result::SCOPE_COUNTRY,
+            $this->isMunicipal() => Result::SCOPE_MUNICIPALITY,
+            default => Result::SCOPE_STATE,
+        };
     }
 
     /**

@@ -1,4 +1,21 @@
+import { follow, following, unfollow } from '@/routes/notifications';
 import { destroy, store } from '@/routes/push-subscriptions';
+
+/** A result this browser follows, and the notifications it wants of it. */
+export type Follow = {
+    office: string;
+    scope_code: string;
+    label: string;
+    url: string | null;
+    notify_updates: boolean;
+    notify_decided: boolean;
+    notify_final: boolean;
+};
+
+export type FollowCategories = Pick<
+    Follow,
+    'notify_updates' | 'notify_decided' | 'notify_final'
+>;
 
 export function isPushSupported(): boolean {
     return (
@@ -60,7 +77,64 @@ export async function unsubscribe(
     await subscription.unsubscribe();
 }
 
-async function send(url: string, method: string, body: unknown): Promise<void> {
+/**
+ * Results this browser follows (none without a push subscription).
+ */
+export async function listFollows(): Promise<Follow[]> {
+    const subscription = await currentSubscription();
+
+    if (!subscription) {
+        return [];
+    }
+
+    const response = await send(following.url(), 'POST', {
+        endpoint: subscription.endpoint,
+    });
+
+    return (await response.json()) as Follow[];
+}
+
+/**
+ * Follow a result with the chosen notifications, subscribing this browser
+ * first if needed. Without any notification, it stops following it.
+ */
+export async function saveFollow(
+    publicKey: string,
+    office: string,
+    scopeCode: string,
+    categories: FollowCategories,
+): Promise<void> {
+    const subscription =
+        (await currentSubscription()) ?? (await subscribe(publicKey));
+
+    await send(follow.url(), 'PUT', {
+        endpoint: subscription.endpoint,
+        office,
+        scope_code: scopeCode,
+        ...categories,
+    });
+}
+
+export async function removeFollow(
+    office: string,
+    scopeCode: string,
+): Promise<void> {
+    const subscription = await currentSubscription();
+
+    if (subscription) {
+        await send(unfollow.url(), 'DELETE', {
+            endpoint: subscription.endpoint,
+            office,
+            scope_code: scopeCode,
+        });
+    }
+}
+
+async function send(
+    url: string,
+    method: string,
+    body: unknown,
+): Promise<Response> {
     const token = document.cookie
         .split('; ')
         .find((cookie) => cookie.startsWith('XSRF-TOKEN='))
@@ -78,8 +152,10 @@ async function send(url: string, method: string, body: unknown): Promise<void> {
     });
 
     if (!response.ok) {
-        throw new Error('Não foi possível salvar a inscrição.');
+        throw new Error('Não foi possível salvar. Tente de novo.');
     }
+
+    return response;
 }
 
 function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {

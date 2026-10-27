@@ -2,13 +2,14 @@
 
 namespace App\Jobs;
 
-use App\Services\WebPush;
+use App\Services\ResultNotifier;
+use App\Services\Tse\SyncEvent;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Notifies every subscribed device that the national result changed. Runs on
- * the queue so a large audience does not hold up the next synchronization.
+ * Notifies the followers of the results that changed in a sync. Runs on the
+ * queue so a large audience does not hold up the next synchronization.
  */
 class SendResultsNotification implements ShouldQueue
 {
@@ -20,10 +21,15 @@ class SendResultsNotification implements ShouldQueue
     public int $timeout = 120;
 
     /**
+     * @param  list<SyncEvent>  $events
+     */
+    public function __construct(public array $events) {}
+
+    /**
      * Execute the job.
      */
-    public function handle(WebPush $webPush): void
+    public function handle(ResultNotifier $notifier): void
     {
-        $webPush->broadcast();
+        $notifier->notify($this->events);
     }
 }

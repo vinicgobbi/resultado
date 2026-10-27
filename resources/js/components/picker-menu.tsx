@@ -11,7 +11,8 @@ type Props = {
     pending?: boolean;
     /** Wider panel, for long lists. */
     wide?: boolean;
-    children: ReactNode;
+    /** The options, or a function of what closes the menu. */
+    children: ReactNode | ((close: () => void) => ReactNode);
 };
 
 /**
@@ -96,7 +97,11 @@ export default function PickerMenu({
                     wide ? 'sm:w-[40rem]' : 'sm:w-72',
                 )}
             >
-                {children}
+                {typeof children === 'function'
+                    ? children(() => {
+                          detailsRef.current!.open = false;
+                      })
+                    : children}
             </div>
         </details>
     );

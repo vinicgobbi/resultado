@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -18,6 +19,22 @@ use Illuminate\Support\Carbon;
 #[Fillable(['endpoint', 'endpoint_hash', 'public_key', 'auth_token'])]
 class PushSubscription extends Model
 {
+    /**
+     * @return HasMany<PushFollow, $this>
+     */
+    public function follows(): HasMany
+    {
+        return $this->hasMany(PushFollow::class);
+    }
+
+    /**
+     * @return HasMany<PushMessage, $this>
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(PushMessage::class);
+    }
+
     /**
      * Hash used to look up a subscription by its (long) endpoint URL.
      */
