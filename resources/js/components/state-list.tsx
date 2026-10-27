@@ -26,6 +26,7 @@ export default function StateList({ places, href, current, className }: Props) {
                 <li key={place.code}>
                     <Link
                         href={href(place.code)}
+                        viewTransition
                         aria-current={
                             place.code === current ? 'page' : undefined
                         }

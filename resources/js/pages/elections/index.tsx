@@ -83,6 +83,7 @@ export default function ElectionsIndex({ days }: Props) {
                                         >
                                             <Link
                                                 href={show(day.code)}
+                                                viewTransition
                                                 className={cn(
                                                     'group flex h-full flex-col gap-3 rounded-2xl border-2 bg-surface p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft hover:shadow-lg',
                                                     day.status === 'apuracao'

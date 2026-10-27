@@ -110,9 +110,8 @@
     }
 
     /*
-     * Changing the election, office or place: the header stays still, the
-     * content fades into the new one and the highlight of the chosen office
-     * slides to its new tab.
+     * Changing the election or the place: the header stays still and the
+     * content fades into the new one. Changing the office is instant.
      */
     ::view-transition-old(root) {
         animation: 140ms ease-in both fade-out;
@@ -122,8 +121,7 @@
         animation: 320ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both fade-up;
     }
 
-    ::view-transition-group(site-header),
-    ::view-transition-group(chosen-office) {
+    ::view-transition-group(site-header) {
         animation-duration: 360ms;
         animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
     }

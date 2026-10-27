@@ -43,6 +43,7 @@ export default function MunicipalityPicker({ municipalities, href }: Props) {
                         <li key={municipality.code}>
                             <Link
                                 href={href(municipality.code)}
+                                viewTransition
                                 className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5 text-sm font-medium text-ink transition-colors hover:border-primary hover:bg-primary-soft"
                             >
                                 <span className="truncate">

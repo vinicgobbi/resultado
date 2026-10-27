@@ -65,9 +65,9 @@ type Props = {
 const POLL_INTERVAL = 20_000;
 
 /**
- * The celebration opens once the view transition of the new page is over:
- * elements animated on their own (the chosen office, the header) are drawn
- * above the whole page while it runs, the celebration included.
+ * The celebration opens once the view transition of the new page (another
+ * election or place) is over: elements animated on their own (the header)
+ * are drawn above the whole page while it runs, the celebration included.
  */
 const CELEBRATION_DELAY = 450;
 
@@ -355,6 +355,7 @@ export default function ResultsIndex({
                                         <li key={day.code}>
                                             <Link
                                                 href={viewHref(day.code)}
+                                                viewTransition
                                                 aria-current={
                                                     day.code ===
                                                     currentDay?.code
@@ -453,24 +454,12 @@ export default function ResultsIndex({
                                                     : undefined
                                             }
                                             className={cn(
-                                                'relative isolate flex min-h-11 items-center rounded-xl border-2 px-4 font-semibold whitespace-nowrap transition-colors',
+                                                'flex min-h-11 items-center rounded-xl border-2 px-4 font-semibold whitespace-nowrap transition-colors',
                                                 option.value === office
-                                                    ? 'border-primary text-on-primary'
+                                                    ? 'border-primary bg-primary text-on-primary'
                                                     : 'border-line-strong hover:border-primary hover:bg-primary-soft',
                                             )}
                                         >
-                                            {option.value === office && (
-                                                // Slides to the new tab when
-                                                // the office changes.
-                                                <span
-                                                    aria-hidden="true"
-                                                    className="absolute -inset-0.5 -z-10 rounded-xl bg-primary"
-                                                    style={{
-                                                        viewTransitionName:
-                                                            'chosen-office',
-                                                    }}
-                                                />
-                                            )}
                                             {option.label}
                                         </Link>
                                     </li>
