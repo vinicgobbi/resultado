@@ -1,0 +1,441 @@
+import { Head, router, usePoll } from '@inertiajs/react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import StatusBadge from '@/components/status-badge';
+import AdminLayout from '@/layouts/admin-layout';
+import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { store } from '@/routes/admin/maintenance-runs';
+import type { ElectionStatus } from '@/types';
+
+type ElectionRow = {
+    code: number;
+    name: string;
+    date: string;
+    status: ElectionStatus;
+    last_synced_at: string | null;
+    completed_at: string | null;
+    results: number;
+    final_results: number;
+};
+
+type Health = {
+    tse_paused_until: string | null;
+    queued_jobs: number;
+    failed_jobs: number;
+    last_failure: { at: string; message: string } | null;
+    map_ready: boolean;
+    push_ready: boolean;
+    subscriptions: number;
+    follows: number;
+};
+
+type Task = {
+    value: string;
+    label: string;
+    description: string;
+    needs_election: boolean;
+};
+
+type RunStatus = 'na-fila' | 'executando' | 'concluida' | 'falhou';
+
+type Run = {
+    id: number;
+    task: string;
+    task_label: string;
+    election_code: number | null;
+    status: RunStatus;
+    user: string | null;
+    created_at: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    output: string;
+};
+
+type Props = {
+    elections: ElectionRow[];
+    health: Health;
+    tasks: Task[];
+    runs: Run[];
+    running: boolean;
+};
+
+/** Tasks that take long or download a lot: confirmed before starting. */
+const HEAVY = ['ressincronizar', 'importar', 'fotos', 'mapa'];
+
+const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
+    'na-fila': { label: 'Na fila', className: 'bg-primary-soft text-primary' },
+    executando: {
+        label: 'Executando',
+        className: 'bg-warning-soft text-warning',
+    },
+    concluida: {
+        label: 'Concluída',
+        className: 'bg-success-soft text-success',
+    },
+    falhou: { label: 'Falhou', className: 'bg-live-soft text-live' },
+};
+
+/**
+ * A moment as "há 3 minutos", with the exact time on hover. Only the
+ * browser knows "now", so the server text may differ.
+ */
+function Moment({ value }: { value: string | null }) {
+    if (!value) {
+        return <span>—</span>;
+    }
+
+    return (
+        <time
+            dateTime={value}
+            title={formatDateTime(value)}
+            suppressHydrationWarning
+        >
+            {formatRelative(value)}
+        </time>
+    );
+}
+
+function HealthCard({
+    title,
+    ok,
+    children,
+}: {
+    title: string;
+    ok: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <div
+            className={cn(
+                'rounded-2xl border-2 bg-surface p-4',
+                ok ? 'border-line' : 'border-live',
+            )}
+        >
+            <p className="flex items-center gap-2 font-semibold">
+                <span aria-hidden="true">{ok ? '✔️' : '⚠️'}</span>
+                {title}
+                <span className="sr-only">
+                    {ok ? '(tudo certo)' : '(precisa de atenção)'}
+                </span>
+            </p>
+            <div className="mt-1 text-sm text-muted">{children}</div>
+        </div>
+    );
+}
+
+export default function Dashboard({
+    elections,
+    health,
+    tasks,
+    runs,
+    running,
+}: Props) {
+    const [starting, setStarting] = useState<string | null>(null);
+
+    // Follows a task closely while one runs.
+    usePoll(running ? 3000 : 30_000, {
+        only: ['elections', 'health', 'runs', 'running'],
+        showProgress: false,
+    });
+
+    const busy = new Set(
+        runs
+            .filter(
+                (run) =>
+                    run.status === 'na-fila' || run.status === 'executando',
+            )
+            .map((run) => `${run.task}-${run.election_code ?? ''}`),
+    );
+
+    function start(task: Task, election?: ElectionRow) {
+        const name = election ? `${task.label} (${election.name})` : task.label;
+
+        if (
+            HEAVY.includes(task.value) &&
+            !window.confirm(`${name}: pode levar vários minutos. Continuar?`)
+        ) {
+            return;
+        }
+
+        router.post(
+            store.url(),
+            { task: task.value, election: election?.code ?? null },
+            {
+                preserveScroll: true,
+                onStart: () => setStarting(task.value + (election?.code ?? '')),
+                onFinish: () => setStarting(null),
+            },
+        );
+    }
+
+    const fullSync = tasks.find((task) => task.needs_election);
+
+    return (
+        <AdminLayout title="Painel da apuração">
+            <Head title="Painel" />
+
+            <section aria-labelledby="saude" className="space-y-3">
+                <h2 id="saude" className="text-lg font-bold">
+                    Situação agora
+                </h2>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <HealthCard title="TSE" ok={!health.tse_paused_until}>
+                        {health.tse_paused_until ? (
+                            <>
+                                Bloqueou os pedidos (HTTP 429). Volta{' '}
+                                <Moment value={health.tse_paused_until} />.
+                            </>
+                        ) : (
+                            'Respondendo normalmente.'
+                        )}
+                    </HealthCard>
+                    <HealthCard title="Fila" ok={health.failed_jobs === 0}>
+                        {health.queued_jobs} aguardando · {health.failed_jobs}{' '}
+                        com falha
+                        {health.last_failure && (
+                            <span className="mt-1 block break-words">
+                                Última falha{' '}
+                                <Moment value={health.last_failure.at} />:{' '}
+                                {health.last_failure.message}
+                            </span>
+                        )}
+                    </HealthCard>
+                    <HealthCard title="Mapa" ok={health.map_ready}>
+                        {health.map_ready
+                            ? 'Geometria gerada.'
+                            : 'Não gerado: use "Gerar o mapa".'}
+                    </HealthCard>
+                    <HealthCard
+                        title="Notificações push"
+                        ok={health.push_ready}
+                    >
+                        {health.push_ready
+                            ? `${health.subscriptions} navegadores inscritos · ${health.follows} resultados seguidos`
+                            : 'Chaves VAPID não configuradas.'}
+                    </HealthCard>
+                </div>
+            </section>
+
+            <section aria-labelledby="eleicoes" className="space-y-3">
+                <h2 id="eleicoes" className="text-lg font-bold">
+                    Eleições
+                </h2>
+                <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-subtle text-muted">
+                            <tr>
+                                <th
+                                    scope="col"
+                                    className="px-4 py-2 font-medium"
+                                >
+                                    Eleição
+                                </th>
+                                <th
+                                    scope="col"
+                                    className="px-4 py-2 font-medium"
+                                >
+                                    Andamento
+                                </th>
+                                <th
+                                    scope="col"
+                                    className="px-4 py-2 font-medium"
+                                >
+                                    Resultados finais
+                                </th>
+                                <th
+                                    scope="col"
+                                    className="px-4 py-2 font-medium"
+                                >
+                                    Última sincronização
+                                </th>
+                                <th scope="col" className="px-4 py-2">
+                                    <span className="sr-only">Ações</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                            {elections.map((election) => {
+                                const percent =
+                                    election.results > 0
+                                        ? (election.final_results /
+                                              election.results) *
+                                          100
+                                        : 0;
+                                const key = `${fullSync?.value}-${election.code}`;
+
+                                return (
+                                    <tr key={election.code}>
+                                        <th
+                                            scope="row"
+                                            className="px-4 py-3 font-normal"
+                                        >
+                                            <span className="block font-semibold">
+                                                {election.name}
+                                            </span>
+                                            <span className="text-muted">
+                                                {formatDate(election.date)} ·
+                                                código {election.code}
+                                            </span>
+                                        </th>
+                                        <td className="px-4 py-3">
+                                            <StatusBadge
+                                                status={election.status}
+                                                className="text-xs"
+                                            />
+                                        </td>
+                                        <td className="min-w-40 px-4 py-3">
+                                            <div
+                                                role="progressbar"
+                                                aria-label={`Resultados finais de ${election.name}`}
+                                                aria-valuemin={0}
+                                                aria-valuemax={100}
+                                                aria-valuenow={Math.round(
+                                                    percent,
+                                                )}
+                                                className="h-2 overflow-hidden rounded-full bg-track"
+                                            >
+                                                <div
+                                                    className="h-full rounded-full bg-success transition-all duration-700"
+                                                    style={{
+                                                        width: `${percent}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                            <span className="text-muted tabular-nums">
+                                                {election.final_results.toLocaleString(
+                                                    'pt-BR',
+                                                )}{' '}
+                                                de{' '}
+                                                {election.results.toLocaleString(
+                                                    'pt-BR',
+                                                )}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-muted">
+                                            <Moment
+                                                value={election.last_synced_at}
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            {fullSync && (
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        busy.has(key) ||
+                                                        starting !== null
+                                                    }
+                                                    onClick={() =>
+                                                        start(
+                                                            fullSync,
+                                                            election,
+                                                        )
+                                                    }
+                                                    className="min-h-10 rounded-xl border-2 border-line-strong px-3 font-semibold whitespace-nowrap hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+                                                >
+                                                    Ressincronizar
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section aria-labelledby="tarefas" className="space-y-3">
+                <h2 id="tarefas" className="text-lg font-bold">
+                    Tarefas
+                </h2>
+                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {tasks
+                        .filter((task) => !task.needs_election)
+                        .map((task) => (
+                            <li
+                                key={task.value}
+                                className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4"
+                            >
+                                <div>
+                                    <p className="font-semibold">
+                                        {task.label}
+                                    </p>
+                                    <p className="text-sm text-muted">
+                                        {task.description}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={
+                                        busy.has(`${task.value}-`) ||
+                                        starting !== null
+                                    }
+                                    onClick={() => start(task)}
+                                    className="mt-auto min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50"
+                                >
+                                    {busy.has(`${task.value}-`)
+                                        ? 'Em andamento…'
+                                        : 'Executar'}
+                                </button>
+                            </li>
+                        ))}
+                </ul>
+            </section>
+
+            <section aria-labelledby="execucoes" className="space-y-3">
+                <h2 id="execucoes" className="text-lg font-bold">
+                    Execuções recentes
+                </h2>
+                {runs.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-line-strong p-6 text-center text-muted">
+                        Nenhuma tarefa foi executada pelo painel ainda.
+                    </p>
+                ) : (
+                    <ul className="space-y-2" aria-live="polite">
+                        {runs.map((run, index) => (
+                            <li
+                                key={run.id}
+                                className="rounded-2xl border border-line bg-surface"
+                            >
+                                <details
+                                    open={
+                                        index === 0 &&
+                                        run.status === 'executando'
+                                    }
+                                >
+                                    <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                                        <span
+                                            className={cn(
+                                                'rounded-full px-2.5 py-0.5 text-xs font-bold',
+                                                RUN_STATUS[run.status]
+                                                    .className,
+                                            )}
+                                        >
+                                            {RUN_STATUS[run.status].label}
+                                        </span>
+                                        <span className="font-semibold">
+                                            {run.task_label}
+                                            {run.election_code &&
+                                                ` · ${run.election_code}`}
+                                        </span>
+                                        <span className="text-sm text-muted">
+                                            {run.user ?? 'alguém'} ·{' '}
+                                            <Moment value={run.created_at} />
+                                        </span>
+                                    </summary>
+                                    <pre className="max-h-80 overflow-auto border-t border-line bg-subtle px-4 py-3 text-xs whitespace-pre-wrap">
+                                        {run.output ||
+                                            (run.status === 'na-fila'
+                                                ? 'Aguardando o início…'
+                                                : 'Sem saída.')}
+                                    </pre>
+                                </details>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+        </AdminLayout>
+    );
+}

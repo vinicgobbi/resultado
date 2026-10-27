@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\CandidateController;
+use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\MaintenanceRunController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CandidatePhotoController;
@@ -40,7 +42,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 
     Route::prefix('admin')->name('admin.')->group(function () {
-        Route::redirect('/', '/admin/candidatos')->name('index');
+        Route::get('/', [DashboardController::class, 'index'])->name('index');
+        Route::post('/tarefas', [MaintenanceRunController::class, 'store'])->name('maintenance-runs.store');
 
         Route::get('/candidatos', [CandidateController::class, 'index'])->name('candidates.index');
         Route::patch('/candidatos/{candidate}', [CandidateController::class, 'update'])->name('candidates.update');

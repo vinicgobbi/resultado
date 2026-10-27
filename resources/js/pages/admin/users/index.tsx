@@ -8,7 +8,7 @@ type Props = {
 };
 
 const inputClass =
-    'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950';
+    'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
 
 export default function UsersIndex({ users }: Props) {
     const { auth } = usePage().props;
@@ -18,22 +18,22 @@ export default function UsersIndex({ users }: Props) {
             <Head title="Usuários" />
 
             <div className="grid gap-6 md:grid-cols-[1fr_320px]">
-                <ul className="divide-y divide-zinc-100 self-start overflow-hidden rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+                <ul className="divide-y divide-line self-start overflow-hidden rounded-xl border border-line bg-surface">
                     {users.map((user) => (
                         <li
                             key={user.id}
                             className="flex items-center gap-3 px-4 py-3"
                         >
                             <div className="min-w-0 flex-1">
-                                <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                                <p className="font-medium text-ink">
                                     {user.name}
                                     {user.id === auth.user?.id && (
-                                        <span className="ml-2 text-xs font-normal text-zinc-500">
+                                        <span className="ml-2 text-xs font-normal text-muted">
                                             (você)
                                         </span>
                                     )}
                                 </p>
-                                <p className="truncate text-xs text-zinc-500">
+                                <p className="truncate text-xs text-muted">
                                     {user.email} · criado em{' '}
                                     {formatDateTime(user.created_at)}
                                 </p>
@@ -48,7 +48,7 @@ export default function UsersIndex({ users }: Props) {
                                             `Excluir o usuário ${user.email}?`,
                                         )
                                     }
-                                    className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                                    className="rounded-lg border border-live px-3 py-1.5 text-sm text-live hover:bg-live-soft"
                                 >
                                     Excluir
                                 </Link>
@@ -61,11 +61,11 @@ export default function UsersIndex({ users }: Props) {
                     {...store.form()}
                     resetOnSuccess
                     options={{ preserveScroll: true }}
-                    className="space-y-3 self-start rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                    className="space-y-3 self-start rounded-xl border border-line bg-surface p-4"
                 >
                     {({ errors, processing }) => (
                         <>
-                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                            <h2 className="font-semibold text-ink">
                                 Novo usuário
                             </h2>
                             {(
@@ -98,7 +98,7 @@ export default function UsersIndex({ users }: Props) {
                                         className={inputClass}
                                     />
                                     {errors[name] && (
-                                        <span className="mt-1 block text-xs text-red-600">
+                                        <span className="mt-1 block text-xs text-live">
                                             {errors[name]}
                                         </span>
                                     )}
@@ -107,7 +107,7 @@ export default function UsersIndex({ users }: Props) {
                             <button
                                 type="submit"
                                 disabled={processing}
-                                className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
                             >
                                 Criar usuário
                             </button>

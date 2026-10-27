@@ -12,6 +12,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 
 #[Signature('tse:sincronizar
     {--eleicao=* : Códigos do TSE das eleições a sincronizar (padrão: as que estão em apuração)}
@@ -21,9 +22,32 @@ use Illuminate\Database\Eloquent\Collection;
 class SyncElectionResults extends Command
 {
     /**
-     * Execute the console command.
+     * Longest a sync may hold the lock, if it dies without releasing it.
+     */
+    private const int LOCK_SECONDS = 1800;
+
+    /**
+     * Execute the console command. One sync at a time, whether scheduled or
+     * started from the dashboard: two at once would notify twice.
      */
     public function handle(ResultSynchronizer $synchronizer): int
+    {
+        $lock = Cache::lock('tse:sincronizar', self::LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            $this->components->info('Outra sincronização já está em andamento.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->sync($synchronizer);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function sync(ResultSynchronizer $synchronizer): int
     {
         $elections = $this->elections();
 

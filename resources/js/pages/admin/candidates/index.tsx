@@ -56,7 +56,7 @@ export default function CandidatesIndex({
         <AdminLayout title="Cores dos candidatos">
             <Head title="Candidatos" />
 
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
                 As cores são usadas nos gráficos e no mapa de municípios. Sem
                 uma cor escolhida aqui, o candidato usa a cor aproximada do
                 partido (config/partidos.php) ou uma cor automática. Candidatos
@@ -77,7 +77,7 @@ export default function CandidatesIndex({
                             )
                         }
                         aria-label="Eleição"
-                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
                     >
                         {elections.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -97,8 +97,8 @@ export default function CandidatesIndex({
                         className={cn(
                             'rounded-lg px-3 py-1.5 text-sm font-medium',
                             option.value === office
-                                ? 'bg-emerald-600 text-white'
-                                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                                ? 'bg-primary text-on-primary'
+                                : 'text-muted hover:bg-subtle',
                         )}
                     >
                         {option.label}
@@ -117,7 +117,7 @@ export default function CandidatesIndex({
                             )
                         }
                         aria-label="Estado"
-                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
                     >
                         {states.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -136,7 +136,7 @@ export default function CandidatesIndex({
                             )
                         }
                         aria-label="Município"
-                        className="max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        className="max-w-56 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
                     >
                         {municipalities.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -148,11 +148,11 @@ export default function CandidatesIndex({
             </div>
 
             {candidates.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                <div className="rounded-xl border border-dashed border-line-strong p-8 text-center text-sm text-muted">
                     Nenhum candidato sincronizado ainda.
                 </div>
             ) : (
-                <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+                <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
                     {candidates.map((candidate) => (
                         <li key={candidate.id}>
                             <Form
@@ -175,10 +175,10 @@ export default function CandidatesIndex({
                                             {candidate.number}
                                         </span>
                                         <div className="min-w-0 flex-1">
-                                            <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                                            <p className="font-medium text-ink">
                                                 {candidate.name}
                                             </p>
-                                            <p className="truncate text-xs text-zinc-500">
+                                            <p className="truncate text-xs text-muted">
                                                 {candidate.full_name} ·{' '}
                                                 {candidate.party}
                                                 {!candidate.custom_color &&
@@ -187,7 +187,7 @@ export default function CandidatesIndex({
                                                         : ' · cor automática')}
                                             </p>
                                             {errors.color && (
-                                                <p className="text-xs text-red-600">
+                                                <p className="text-xs text-live">
                                                     {errors.color}
                                                 </p>
                                             )}
@@ -196,13 +196,13 @@ export default function CandidatesIndex({
                                             type="color"
                                             name="color"
                                             defaultValue={candidate.color}
-                                            className="h-10 w-14 cursor-pointer rounded border border-zinc-300 bg-transparent dark:border-zinc-700"
+                                            className="h-10 w-14 cursor-pointer rounded border border-line-strong bg-transparent"
                                             aria-label={`Cor de ${candidate.name}`}
                                         />
                                         <button
                                             type="submit"
                                             disabled={processing}
-                                            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                            className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
                                         >
                                             Salvar
                                         </button>

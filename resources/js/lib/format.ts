@@ -60,3 +60,31 @@ const longDateFormatter = new Intl.DateTimeFormat('pt-BR', {
 export function formatLongDate(value: string): string {
     return longDateFormatter.format(new Date(`${value}T00:00:00Z`));
 }
+
+const relativeFormatter = new Intl.RelativeTimeFormat('pt-BR', {
+    numeric: 'auto',
+});
+
+/**
+ * "há 3 minutos", "em 2 minutos": how far a moment is from now.
+ */
+export function formatRelative(value: string | null): string {
+    if (!value) {
+        return '—';
+    }
+
+    const seconds = (new Date(value).getTime() - Date.now()) / 1000;
+    const units: [Intl.RelativeTimeFormatUnit, number][] = [
+        ['day', 86_400],
+        ['hour', 3_600],
+        ['minute', 60],
+    ];
+
+    for (const [unit, size] of units) {
+        if (Math.abs(seconds) >= size) {
+            return relativeFormatter.format(Math.round(seconds / size), unit);
+        }
+    }
+
+    return relativeFormatter.format(Math.round(seconds), 'second');
+}

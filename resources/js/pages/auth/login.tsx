@@ -5,17 +5,17 @@ export default function Login() {
     return (
         <>
             <Head title="Entrar" />
-            <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-                <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex min-h-screen items-center justify-center bg-subtle px-4 text-ink">
+                <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 shadow-sm">
                     <img
                         src="/app-icons/icon-192.png"
                         alt=""
                         className="mb-4 size-10 rounded-lg"
                     />
-                    <h1 className="mb-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
+                    <h1 className="mb-1 text-lg font-bold text-ink">
                         Área administrativa
                     </h1>
-                    <p className="mb-6 text-sm text-zinc-500">
+                    <p className="mb-6 text-sm text-muted">
                         Entre com seu e-mail e senha.
                     </p>
 
@@ -36,10 +36,10 @@ export default function Login() {
                                         required
                                         autoFocus
                                         autoComplete="email"
-                                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+                                        className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2"
                                     />
                                     {errors.email && (
-                                        <span className="mt-1 block text-xs text-red-600">
+                                        <span className="mt-1 block text-xs text-live">
                                             {errors.email}
                                         </span>
                                     )}
@@ -53,22 +53,22 @@ export default function Login() {
                                         name="password"
                                         required
                                         autoComplete="current-password"
-                                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+                                        className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2"
                                     />
                                     {errors.password && (
-                                        <span className="mt-1 block text-xs text-red-600">
+                                        <span className="mt-1 block text-xs text-live">
                                             {errors.password}
                                         </span>
                                     )}
                                 </label>
-                                <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                                <label className="flex items-center gap-2 text-sm text-muted">
                                     <input type="checkbox" name="remember" />
                                     Manter conectado
                                 </label>
                                 <button
                                     type="submit"
                                     disabled={processing}
-                                    className="w-full rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
                                 >
                                     {processing ? 'Entrando...' : 'Entrar'}
                                 </button>

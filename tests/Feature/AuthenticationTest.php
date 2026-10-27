@@ -6,7 +6,7 @@ test('users can log in to the admin area', function () {
     $user = User::factory()->create();
 
     $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
-        ->assertRedirect(route('admin.candidates.index'));
+        ->assertRedirect(route('admin.index'));
 
     $this->assertAuthenticatedAs($user);
 });
