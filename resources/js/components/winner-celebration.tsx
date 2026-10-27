@@ -127,7 +127,7 @@ export default function WinnerCelebration({
         >
             <div
                 className={cn(
-                    'relative w-full rounded-3xl bg-white p-8 text-center shadow-2xl motion-safe:animate-[pop-in_500ms_cubic-bezier(0.34,1.56,0.64,1)] dark:bg-zinc-900',
+                    'relative w-full rounded-3xl bg-surface p-8 text-center shadow-2xl motion-safe:animate-[pop-in_500ms_cubic-bezier(0.34,1.56,0.64,1)]',
                     mosaic ? 'max-w-2xl' : 'max-w-md',
                 )}
                 onClick={(event) => event.stopPropagation()}
@@ -149,14 +149,14 @@ export default function WinnerCelebration({
                             key={candidate.photo_url}
                             candidate={candidate}
                             alt={candidate.full_name}
-                            className="size-full rounded-full border-4 border-white object-cover object-top dark:border-zinc-900"
+                            className="size-full rounded-full border-4 border-surface object-cover object-top"
                             fallback={
-                                <span className="flex size-full items-center justify-center rounded-full border-4 border-white bg-zinc-100 text-5xl font-black text-zinc-700 dark:border-zinc-900 dark:bg-zinc-800 dark:text-zinc-200">
+                                <span className="flex size-full items-center justify-center rounded-full border-4 border-surface bg-subtle text-5xl font-black text-ink">
                                     {candidate.number}
                                 </span>
                             }
                         />
-                        <span className="absolute -right-1 bottom-2 rounded-full bg-white px-2.5 py-1 text-lg font-black text-zinc-900 shadow dark:bg-zinc-800 dark:text-zinc-50">
+                        <span className="absolute -right-1 bottom-2 rounded-full bg-surface px-2.5 py-1 text-lg font-black text-ink shadow">
                             {candidate.number}
                         </span>
                     </div>
@@ -192,11 +192,11 @@ export default function WinnerCelebration({
                                         key={winnerCandidate.photo_url}
                                         candidate={winnerCandidate}
                                         alt={winnerCandidate.full_name}
-                                        className="size-full rounded-full border-2 border-white object-cover object-top dark:border-zinc-900"
+                                        className="size-full rounded-full border-2 border-surface object-cover object-top"
                                         fallback={
                                             <span
                                                 className={cn(
-                                                    'flex size-full items-center justify-center rounded-full border-2 border-white bg-zinc-100 font-black text-zinc-700 dark:border-zinc-900 dark:bg-zinc-800 dark:text-zinc-200',
+                                                    'flex size-full items-center justify-center rounded-full border-2 border-surface bg-subtle font-black text-ink',
                                                     mosaic
                                                         ? 'text-[10px]'
                                                         : 'text-3xl',
@@ -208,7 +208,7 @@ export default function WinnerCelebration({
                                     />
                                 </div>
                                 {!mosaic && (
-                                    <figcaption className="mt-2 truncate text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                                    <figcaption className="mt-2 truncate text-sm font-bold text-ink">
                                         {winnerCandidate.name}
                                     </figcaption>
                                 )}
@@ -217,25 +217,25 @@ export default function WinnerCelebration({
                     </div>
                 )}
 
-                <p className="mt-6 text-xs font-bold tracking-[0.2em] text-emerald-600 uppercase">
+                <p className="mt-6 text-xs font-bold tracking-[0.2em] text-success uppercase">
                     {title}
                 </p>
                 {winners.length === 1 ? (
                     <>
                         <h2
                             id="winner-title"
-                            className="mt-1 text-3xl font-black text-zinc-900 dark:text-zinc-50"
+                            className="mt-1 text-3xl font-black text-ink"
                         >
                             {candidate.name}
                         </h2>
-                        <p className="text-sm text-zinc-500">
+                        <p className="text-sm text-muted">
                             {candidate.party} · {round}º turno
                         </p>
 
                         {result && (
-                            <p className="mt-4 text-4xl font-bold text-zinc-900 tabular-nums dark:text-zinc-50">
+                            <p className="mt-4 text-4xl font-bold text-ink tabular-nums">
                                 {formatPercent(result.percent)}
-                                <span className="block text-sm font-normal text-zinc-500">
+                                <span className="block text-sm font-normal text-muted">
                                     {formatNumber(result.votes)} votos
                                 </span>
                             </p>
@@ -244,7 +244,7 @@ export default function WinnerCelebration({
                 ) : (
                     <h2
                         id="winner-title"
-                        className="mt-1 text-2xl font-black text-zinc-900 dark:text-zinc-50"
+                        className="mt-1 text-2xl font-black text-ink"
                     >
                         {mosaic
                             ? `${winners.length} eleitos`
@@ -255,7 +255,7 @@ export default function WinnerCelebration({
                 )}
 
                 {!elected && (
-                    <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                    <p className="mt-4 text-sm text-muted">
                         Mesmo que todos os eleitores ainda não apurados votassem
                         contra, a vitória não muda mais.
                     </p>
@@ -265,7 +265,7 @@ export default function WinnerCelebration({
                     ref={closeRef}
                     type="button"
                     onClick={onClose}
-                    className="mt-6 w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700"
+                    className="mt-6 w-full rounded-xl bg-success px-4 py-3 font-semibold text-on-success hover:bg-success-hover"
                 >
                     Ver os resultados
                 </button>

@@ -480,18 +480,15 @@ export default function ResultsMap({
 
     if (failed) {
         return (
-            <div className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                Mapa indisponível. Gere a geometria com{' '}
-                <code className="mx-1 rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                    php artisan mapa:baixar
-                </code>
+            <div className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-line-strong p-6 text-center text-sm text-muted">
+                O mapa ainda não está disponível.
             </div>
         );
     }
 
     if (!geometry || !viewBox) {
         return (
-            <div className="aspect-square animate-pulse rounded-xl bg-zinc-200/70 dark:bg-zinc-800/70" />
+            <div className="aspect-square animate-pulse rounded-xl bg-track" />
         );
     }
 
@@ -536,7 +533,7 @@ export default function ResultsMap({
                     }
                 >
                     <g
-                        className="fill-zinc-200 stroke-white/60 dark:fill-zinc-800 dark:stroke-zinc-950/60"
+                        className="fill-track stroke-surface/60"
                         strokeWidth={0.3 * unit}
                     >
                         <MunicipalityPaths
@@ -551,7 +548,7 @@ export default function ResultsMap({
                         <path
                             d={hoveredShape}
                             fill="none"
-                            className="pointer-events-none stroke-zinc-950 dark:stroke-white"
+                            className="pointer-events-none stroke-ink"
                             strokeWidth={1.5 * unit}
                         />
                     )}
@@ -567,8 +564,8 @@ export default function ResultsMap({
                                     d={state.d}
                                     className={
                                         selectedState === code
-                                            ? 'stroke-zinc-950 dark:stroke-white'
-                                            : 'stroke-zinc-700 dark:stroke-zinc-300'
+                                            ? 'stroke-ink'
+                                            : 'stroke-muted'
                                     }
                                     strokeWidth={
                                         (selectedState === code ? 2 : 0.8) *
@@ -580,7 +577,7 @@ export default function ResultsMap({
                 </svg>
             </div>
 
-            <div className="absolute top-3 right-3 flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white/95 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/95">
+            <div className="absolute top-3 right-3 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow-sm">
                 {[
                     {
                         label: '+',
@@ -611,7 +608,7 @@ export default function ResultsMap({
                         title={button.title}
                         aria-label={button.title}
                         onClick={button.action}
-                        className="size-9 text-lg leading-none text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        className="size-9 text-lg leading-none text-ink hover:bg-subtle"
                     >
                         {button.label}
                     </button>
@@ -620,13 +617,13 @@ export default function ResultsMap({
 
             {hover && hoveredName && (
                 <div
-                    className="pointer-events-none absolute z-10 w-56 rounded-lg border border-zinc-200 bg-white p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                    className="pointer-events-none absolute z-10 w-56 rounded-lg border border-line bg-surface p-3 text-xs shadow-lg"
                     style={{
                         left: Math.min(hover.x + 14, width - TOOLTIP_WIDTH - 6),
                         top: hover.y + 14,
                     }}
                 >
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-50">
+                    <p className="font-semibold text-ink">
                         {hoveredName[0]} – {hoveredName[1]}
                     </p>
                     {hoveredLeader && hovered ? (
@@ -645,18 +642,16 @@ export default function ResultsMap({
                                     {formatPercent(hovered[1])}
                                 </span>
                             </p>
-                            <p className="mt-1 text-zinc-500">
+                            <p className="mt-1 text-muted">
                                 {formatPercent(hovered[2])} das seções apuradas
                             </p>
                         </>
                     ) : (
-                        <p className="mt-1 text-zinc-500">
+                        <p className="mt-1 text-muted">
                             Sem votos apurados ainda
                         </p>
                     )}
-                    <p className="mt-1 text-zinc-500 dark:text-zinc-400">
-                        Clique para detalhes
-                    </p>
+                    <p className="mt-1 text-muted">Clique para detalhes</p>
                 </div>
             )}
         </div>

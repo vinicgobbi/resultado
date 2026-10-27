@@ -54,17 +54,22 @@ export default function NotificationToggle() {
                 type="button"
                 onClick={toggle}
                 disabled={busy}
+                aria-pressed={subscription !== null}
                 className={
                     subscription
-                        ? 'rounded-full border border-emerald-600 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-400 dark:hover:bg-emerald-950'
-                        : 'rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50'
+                        ? 'rounded-full border border-success px-3 py-1.5 text-xs font-medium text-success hover:bg-success-soft disabled:opacity-50'
+                        : 'rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50'
                 }
             >
                 {subscription
                     ? '🔔 Notificações ativas'
                     : '🔔 Receber notificações'}
             </button>
-            {error && <span className="text-xs text-red-600">{error}</span>}
+            {error && (
+                <span role="alert" className="text-xs text-live">
+                    {error}
+                </span>
+            )}
         </div>
     );
 }

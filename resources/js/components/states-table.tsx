@@ -16,9 +16,12 @@ export default function StatesTable({
     onSelect,
 }: Props) {
     return (
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="overflow-hidden rounded-xl border border-line bg-surface">
             <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-left text-xs text-zinc-500 uppercase dark:bg-zinc-800/50">
+                <caption className="sr-only">
+                    Quem lidera em cada estado e quanto já foi apurado
+                </caption>
+                <thead className="bg-subtle text-left text-xs text-muted uppercase">
                     <tr>
                         <th className="px-3 py-2 font-medium">UF</th>
                         <th className="px-3 py-2 font-medium">Votação</th>
@@ -27,7 +30,7 @@ export default function StatesTable({
                         </th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                <tbody className="divide-y divide-line">
                     {states.map((state) => {
                         const leader =
                             state.leader_id !== null
@@ -49,20 +52,41 @@ export default function StatesTable({
                                 }
                                 className={cn(
                                     selectable &&
-                                        'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-                                    selectedState === state.code &&
-                                        'bg-zinc-100 dark:bg-zinc-800',
+                                        'cursor-pointer hover:bg-subtle',
+                                    selectedState === state.code && 'bg-subtle',
                                 )}
                                 title={state.name}
                             >
-                                <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-100">
-                                    {state.code === 'ZZ'
-                                        ? 'Exterior'
-                                        : state.code}
-                                </td>
+                                <th
+                                    scope="row"
+                                    className="px-3 py-2 text-left font-semibold text-ink"
+                                >
+                                    {selectable ? (
+                                        <button
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onSelect(
+                                                    selectedState === state.code
+                                                        ? ''
+                                                        : state.code,
+                                                );
+                                            }}
+                                            aria-pressed={
+                                                selectedState === state.code
+                                            }
+                                            aria-label={`Ver ${state.name} no mapa`}
+                                            className="rounded px-1 underline-offset-2 hover:underline"
+                                        >
+                                            {state.code}
+                                        </button>
+                                    ) : (
+                                        'Exterior'
+                                    )}
+                                </th>
                                 <td className="w-full px-3 py-2">
                                     <div className="flex items-center gap-2">
-                                        <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                        <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-track">
                                             {state.results.map((result) => (
                                                 <div
                                                     key={result.candidate_id}
@@ -76,14 +100,14 @@ export default function StatesTable({
                                                 />
                                             ))}
                                         </div>
-                                        <span className="w-28 truncate text-xs text-zinc-600 dark:text-zinc-400">
+                                        <span className="w-28 truncate text-xs text-muted">
                                             {leader && leaderResult
                                                 ? `${leader.name} ${formatPercent(leaderResult.percent)}`
                                                 : '—'}
                                         </span>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right text-xs text-zinc-500 tabular-nums">
+                                <td className="px-3 py-2 text-right text-xs text-muted tabular-nums">
                                     {formatPercent(state.counted_percent)}
                                 </td>
                             </tr>

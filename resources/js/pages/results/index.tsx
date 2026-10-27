@@ -5,6 +5,7 @@ import MunicipalityPanel from '@/components/municipality-panel';
 import MunicipalityPicker from '@/components/municipality-picker';
 import NotificationToggle from '@/components/notification-toggle';
 import ResultsMap from '@/components/results-map';
+import SkipLink from '@/components/skip-link';
 import StatesTable from '@/components/states-table';
 import WinnerCelebration from '@/components/winner-celebration';
 import type { CelebratedWinner } from '@/components/winner-celebration';
@@ -243,8 +244,10 @@ export default function ResultsIndex({
                 title={`${officeLabel}${placeName ? ` ${placeName}` : ''} · ${election.year} · ${election.round}º turno`}
             />
 
-            <div className="min-h-screen bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-                <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <SkipLink />
+
+            <div className="min-h-screen bg-canvas text-ink">
+                <header className="border-b border-line bg-surface">
                     <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4">
                         <div className="flex items-center gap-3">
                             <img
@@ -253,11 +256,11 @@ export default function ResultsIndex({
                                 className="size-9 rounded-lg"
                             />
                             <div>
-                                <h1 className="text-lg leading-tight font-bold text-zinc-900 dark:text-zinc-50">
+                                <h1 className="text-lg leading-tight font-bold text-ink">
                                     Eleições {election.year} · {officeLabel}
                                     {placeName && ` · ${placeName}`}
                                 </h1>
-                                <p className="text-xs text-zinc-500">
+                                <p className="text-xs text-muted">
                                     {formatDate(election.date)} · Dados oficiais
                                     da divulgação do TSE
                                 </p>
@@ -265,17 +268,25 @@ export default function ResultsIndex({
                         </div>
 
                         {rounds.length > 1 && (
-                            <nav className="flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800">
+                            <nav
+                                aria-label="Turno"
+                                className="flex rounded-full bg-subtle p-1"
+                            >
                                 {rounds.map((option) => (
                                     <Link
                                         key={option.code}
                                         href={viewHref(option.code)}
                                         preserveScroll
+                                        aria-current={
+                                            option.code === election.code
+                                                ? 'page'
+                                                : undefined
+                                        }
                                         className={cn(
                                             'rounded-full px-4 py-1.5 text-sm font-medium',
                                             option.code === election.code
-                                                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-                                                : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
+                                                ? 'bg-surface text-ink shadow-sm'
+                                                : 'text-muted hover:text-ink',
                                         )}
                                     >
                                         {option.round}º turno
@@ -287,7 +298,7 @@ export default function ResultsIndex({
                         <div className="ml-auto flex items-center gap-3">
                             <Link
                                 href={electionsIndex()}
-                                className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                                className="text-sm font-medium text-muted hover:text-ink"
                             >
                                 Outras eleições
                             </Link>
@@ -296,7 +307,10 @@ export default function ResultsIndex({
                     </div>
 
                     <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pb-3">
-                        <nav className="-mx-1 flex gap-1 overflow-x-auto px-1">
+                        <nav
+                            aria-label="Cargo"
+                            className="-mx-1 flex gap-1 overflow-x-auto px-1"
+                        >
                             {offices.map((option) => (
                                 <Link
                                     key={option.value}
@@ -305,11 +319,16 @@ export default function ResultsIndex({
                                         { cargo: option.value },
                                     )}
                                     preserveScroll
+                                    aria-current={
+                                        option.value === office
+                                            ? 'page'
+                                            : undefined
+                                    }
                                     className={cn(
                                         'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
                                         option.value === office
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                                            ? 'bg-primary text-on-primary'
+                                            : 'text-muted hover:bg-subtle',
                                     )}
                                 >
                                     {option.label}
@@ -330,7 +349,7 @@ export default function ResultsIndex({
                                     )
                                 }
                                 aria-label="Estado"
-                                className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                                className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
                             >
                                 {places.map((place) => (
                                     <option key={place.code} value={place.code}>
@@ -354,7 +373,7 @@ export default function ResultsIndex({
                                     )
                                 }
                                 aria-label="Município"
-                                className="max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                                className="max-w-56 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
                             >
                                 {municipalities.map((option) => (
                                     <option
@@ -369,13 +388,25 @@ export default function ResultsIndex({
                     </div>
                 </header>
 
-                <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+                <main
+                    id="conteudo"
+                    tabIndex={-1}
+                    className="mx-auto max-w-7xl space-y-6 px-4 py-6 focus:outline-none"
+                >
+                    <p
+                        className="sr-only"
+                        aria-live="polite"
+                        aria-atomic="true"
+                    >
+                        {summary &&
+                            `${formatPercent(summary.counted_percent)} das seções apuradas${summary.is_final ? ', apuração encerrada' : ''}.`}
+                    </p>
                     {pickState ? (
-                        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                        <section className="rounded-2xl border border-line bg-surface p-5">
+                            <h2 className="font-semibold text-ink">
                                 Escolha o estado
                             </h2>
-                            <p className="mb-4 text-sm text-zinc-500">
+                            <p className="mb-4 text-sm text-muted">
                                 Veja o resultado de {officeLabel} no{' '}
                                 {election.round}º turno de {election.year}.
                             </p>
@@ -387,9 +418,9 @@ export default function ResultsIndex({
                                                 uf: place.code.toLowerCase(),
                                                 municipio: null,
                                             })}
-                                            className="flex items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-medium text-zinc-800 hover:border-emerald-600 hover:bg-emerald-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/40"
+                                            className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5 text-sm font-medium text-ink hover:border-primary hover:bg-primary-soft"
                                         >
-                                            <span className="w-7 text-xs font-bold text-zinc-500">
+                                            <span className="w-7 text-xs font-bold text-muted">
                                                 {place.code}
                                             </span>
                                             {place.name}
@@ -399,11 +430,11 @@ export default function ResultsIndex({
                             </ul>
                         </section>
                     ) : pickMunicipality ? (
-                        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                        <section className="rounded-2xl border border-line bg-surface p-5">
+                            <h2 className="font-semibold text-ink">
                                 Escolha o município
                             </h2>
-                            <p className="mb-4 text-sm text-zinc-500">
+                            <p className="mb-4 text-sm text-muted">
                                 Veja o resultado de {officeLabel} em {stateName}{' '}
                                 no {election.round}º turno de {election.year}.
                             </p>
@@ -417,7 +448,7 @@ export default function ResultsIndex({
                             />
                         </section>
                     ) : !summary ? (
-                        <div className="rounded-xl border border-dashed border-zinc-300 p-10 text-center text-zinc-500 dark:border-zinc-700">
+                        <div className="rounded-xl border border-dashed border-line-strong p-10 text-center text-muted">
                             {election.status === 'agendada'
                                 ? `A apuração começa em ${formatDate(election.date)}, às 17h.`
                                 : `Ainda não há resultados de ${officeLabel} sincronizados para esta eleição.`}
@@ -425,32 +456,32 @@ export default function ResultsIndex({
                     ) : (
                         <>
                             <section className="space-y-4">
-                                <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                                <div className="rounded-2xl border border-line bg-surface p-5">
                                     <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
                                         <div>
-                                            <p className="text-sm text-zinc-500">
+                                            <p className="text-sm text-muted">
                                                 Seções apuradas
                                             </p>
-                                            <p className="text-4xl font-bold text-zinc-900 tabular-nums dark:text-zinc-50">
+                                            <p className="text-4xl font-bold text-ink tabular-nums">
                                                 {formatPercent(
                                                     summary.counted_percent,
                                                 )}
                                             </p>
                                         </div>
-                                        <p className="flex items-center gap-2 text-xs text-zinc-500">
+                                        <p className="flex items-center gap-2 text-xs text-muted">
                                             {summary.is_final ? (
-                                                <span className="rounded-full bg-zinc-200 px-2 py-0.5 font-medium dark:bg-zinc-800">
+                                                <span className="rounded-full bg-track px-2 py-0.5 font-medium">
                                                     Apuração encerrada
                                                 </span>
                                             ) : !live ? (
-                                                <span className="rounded-full bg-zinc-200 px-2 py-0.5 font-medium dark:bg-zinc-800">
+                                                <span className="rounded-full bg-track px-2 py-0.5 font-medium">
                                                     Resultado parcial
                                                 </span>
                                             ) : (
-                                                <span className="flex items-center gap-1.5 font-medium text-red-600">
+                                                <span className="flex items-center gap-1.5 font-medium text-live">
                                                     <span className="relative flex size-2">
-                                                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-red-500 opacity-75" />
-                                                        <span className="relative inline-flex size-2 rounded-full bg-red-600" />
+                                                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-75" />
+                                                        <span className="relative inline-flex size-2 rounded-full bg-live" />
                                                     </span>
                                                     AO VIVO
                                                 </span>
@@ -459,9 +490,9 @@ export default function ResultsIndex({
                                             {formatDateTime(summary.updated_at)}
                                         </p>
                                     </div>
-                                    <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                    <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-track">
                                         <div
-                                            className="h-full bg-emerald-600 transition-all duration-700"
+                                            className="h-full bg-success transition-all duration-700"
                                             style={{
                                                 width: `${summary.counted_percent}%`,
                                             }}
@@ -492,12 +523,12 @@ export default function ResultsIndex({
                                     ].map(([label, value]) => (
                                         <div
                                             key={label}
-                                            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
+                                            className="rounded-xl border border-line bg-surface px-4 py-3"
                                         >
-                                            <dt className="text-xs text-zinc-500">
+                                            <dt className="text-xs text-muted">
                                                 {label}
                                             </dt>
-                                            <dd className="text-lg font-semibold text-zinc-900 tabular-nums dark:text-zinc-50">
+                                            <dd className="text-lg font-semibold text-ink tabular-nums">
                                                 {formatNumber(Number(value))}
                                             </dd>
                                         </div>
@@ -507,20 +538,21 @@ export default function ResultsIndex({
 
                             {!proportional && !isMunicipal && (
                                 <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                                    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                                    <div className="rounded-2xl border border-line bg-surface p-4">
                                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                                            <h2 className="font-semibold text-ink">
                                                 Quem lidera em cada município
                                             </h2>
                                             {isNationwide && (
                                                 <select
+                                                    aria-label="Mostrar no mapa"
                                                     value={selectedState}
                                                     onChange={(event) =>
                                                         setSelectedState(
                                                             event.target.value,
                                                         )
                                                     }
-                                                    className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                                                    className="rounded-lg border border-line-strong bg-surface px-2 py-1 text-sm"
                                                 >
                                                     <option value="">
                                                         Brasil
@@ -558,16 +590,13 @@ export default function ResultsIndex({
                                                 onSelect={selectMunicipality}
                                             />
                                         ) : (
-                                            <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                                                Mapa ainda não gerado. Rode{' '}
-                                                <code>
-                                                    php artisan mapa:baixar
-                                                </code>
-                                                .
+                                            <p className="rounded-xl border border-dashed border-line-strong p-6 text-center text-sm text-muted">
+                                                O mapa ainda não está
+                                                disponível.
                                             </p>
                                         )}
 
-                                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+                                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
                                             {candidates.map((candidate) => (
                                                 <span
                                                     key={candidate.id}
@@ -584,7 +613,7 @@ export default function ResultsIndex({
                                                 </span>
                                             ))}
                                             <span className="flex items-center gap-1.5">
-                                                <span className="size-3 rounded-sm bg-zinc-200 dark:bg-zinc-800" />
+                                                <span className="size-3 rounded-sm bg-track" />
                                                 Sem apuração
                                             </span>
                                             <span className="w-full sm:ml-auto sm:w-auto">
@@ -618,7 +647,7 @@ export default function ResultsIndex({
                     )}
                 </main>
 
-                <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-zinc-500">
+                <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-muted">
                     Fonte: Tribunal Superior Eleitoral (resultados.tse.jus.br).
                     {live &&
                         ` Atualização automática a cada ${POLL_INTERVAL / 1000} segundos.`}

@@ -40,10 +40,10 @@ export default function MunicipalityPicker({ municipalities, href }: Props) {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar município"
                 aria-label="Buscar município"
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm sm:max-w-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm sm:max-w-sm"
             />
             {matches.length === 0 ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                     Nenhum município encontrado.
                 </p>
             ) : (
@@ -52,13 +52,13 @@ export default function MunicipalityPicker({ municipalities, href }: Props) {
                         <li key={municipality.code}>
                             <Link
                                 href={href(municipality.code)}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-medium text-zinc-800 hover:border-emerald-600 hover:bg-emerald-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/40"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5 text-sm font-medium text-ink hover:border-primary hover:bg-primary-soft"
                             >
                                 <span className="truncate">
                                     {municipality.name}
                                 </span>
                                 {!municipality.is_final && (
-                                    <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
+                                    <span className="shrink-0 text-xs text-muted tabular-nums">
                                         {formatPercent(
                                             municipality.counted_percent,
                                         )}

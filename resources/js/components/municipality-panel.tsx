@@ -20,22 +20,26 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
     );
 
     return (
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <section
+            aria-label="Município selecionado no mapa"
+            aria-live="polite"
+            className="rounded-xl border border-line bg-surface p-4"
+        >
             <div className="mb-3 flex items-start justify-between gap-2">
                 {loading || !detail ? (
-                    <div className="h-6 w-40 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                    <div className="h-6 w-40 animate-pulse rounded bg-track" />
                 ) : (
                     <div>
-                        <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                        <h3 className="font-semibold text-ink">
                             {detail.name} – {detail.state}
                             {detail.is_capital && (
-                                <span className="ml-2 text-xs font-normal text-zinc-500">
+                                <span className="ml-2 text-xs font-normal text-muted">
                                     capital
                                 </span>
                             )}
                         </h3>
                         {detail.result && (
-                            <p className="text-xs text-zinc-500">
+                            <p className="text-xs text-muted">
                                 {formatPercent(detail.result.counted_percent)}{' '}
                                 apurado · atualizado{' '}
                                 {formatDateTime(detail.result.updated_at)}
@@ -46,7 +50,7 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                 <button
                     type="button"
                     onClick={onClose}
-                    className="rounded-md px-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="rounded-md px-2 text-muted hover:bg-subtle"
                     aria-label="Fechar"
                 >
                     ✕
@@ -55,11 +59,11 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
 
             {loading || !detail ? (
                 <div className="space-y-2">
-                    <div className="h-4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
-                    <div className="h-4 w-2/3 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                    <div className="h-4 animate-pulse rounded bg-track" />
+                    <div className="h-4 w-2/3 animate-pulse rounded bg-track" />
                 </div>
             ) : !detail.result ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                     Nenhuma seção apurada neste município ainda.
                 </p>
             ) : (
@@ -78,12 +82,12 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                                         </span>
                                         <span className="tabular-nums">
                                             {formatPercent(result.percent)}{' '}
-                                            <span className="text-xs text-zinc-500">
+                                            <span className="text-xs text-muted">
                                                 ({formatNumber(result.votes)})
                                             </span>
                                         </span>
                                     </div>
-                                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-track">
                                         <div
                                             className="h-full"
                                             style={{
@@ -105,9 +109,9 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                         ].map(([label, value]) => (
                             <div
                                 key={label}
-                                className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60"
+                                className="rounded-lg bg-subtle p-2"
                             >
-                                <dt className="text-zinc-500">{label}</dt>
+                                <dt className="text-muted">{label}</dt>
                                 <dd className="font-semibold tabular-nums">
                                     {formatNumber(Number(value))}
                                 </dd>
@@ -116,6 +120,6 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                     </dl>
                 </>
             )}
-        </div>
+        </section>
     );
 }

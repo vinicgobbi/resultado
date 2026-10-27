@@ -3,11 +3,38 @@
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
+/*
+ * Semantic colors: components use these names instead of a palette, so the
+ * dark theme only redefines them below. Text colors keep at least 4.5:1
+ * against every background (WCAG AA), and control borders 3:1.
+ */
 @theme {
     --font-sans:
-        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
+
+    --color-canvas: #f6f5f1;
+    --color-surface: #ffffff;
+    --color-subtle: #eeece6;
+    --color-track: #e2dfd7;
+    --color-line: #d6d2c8;
+    --color-line-strong: #8c8777;
+    --color-ink: #15191f;
+    --color-muted: #4b5363;
+    --color-primary: #1e4fbf;
+    --color-primary-hover: #183f99;
+    --color-primary-soft: #e6edfb;
+    --color-on-primary: #ffffff;
+    --color-success: #146c3a;
+    --color-success-hover: #0f5229;
+    --color-success-soft: #e3f3e9;
+    --color-on-success: #ffffff;
+    --color-live: #b42318;
+    --color-live-soft: #fdecea;
+    --color-warning: #7a4f00;
+    --color-warning-soft: #fdf3dc;
+    --color-focus: #1e4fbf;
 }
 
 @layer base {
@@ -19,9 +46,53 @@
         color-scheme: light dark;
     }
 
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --color-canvas: #0e1217;
+            --color-surface: #161b22;
+            --color-subtle: #1e252e;
+            --color-track: #29313b;
+            --color-line: #2e3742;
+            --color-line-strong: #6b7685;
+            --color-ink: #eef1f5;
+            --color-muted: #aab3bf;
+            --color-primary: #8db2ff;
+            --color-primary-hover: #b3cbff;
+            --color-primary-soft: #1c2a47;
+            --color-on-primary: #0e1217;
+            --color-success: #6fd39a;
+            --color-success-hover: #9be2b9;
+            --color-success-soft: #15301f;
+            --color-on-success: #0e1217;
+            --color-live: #ff8a7a;
+            --color-live-soft: #3a1714;
+            --color-warning: #f2c46d;
+            --color-warning-soft: #33270f;
+            --color-focus: #ffd25e;
+        }
+    }
+
     /* Anything without an explicit color inherits a readable one. */
     body {
-        @apply bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100;
+        @apply bg-canvas text-ink;
+    }
+
+    /* A thick, offset outline that is visible on every background. */
+    :focus-visible {
+        outline: 3px solid var(--color-focus);
+        outline-offset: 2px;
+    }
+
+    /* Visitors who ask for less motion get no animations or transitions. */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        ::before,
+        ::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
     }
 }
 

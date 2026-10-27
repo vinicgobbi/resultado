@@ -17,7 +17,7 @@ type Props = {
 const PAGE_SIZE = 30;
 
 const badgeClass =
-    'shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase';
+    'shrink-0 rounded-full bg-success px-2 py-0.5 text-[10px] font-bold tracking-wide text-on-success uppercase';
 
 function winnerLabel(winner: Winner): string {
     return winner.status === 'elected' ? 'Eleito' : 'Matematicamente eleito';
@@ -65,7 +65,7 @@ export default function CandidateResults({
             {proportional ? (
                 <div className="flex flex-wrap items-center gap-2">
                     {winners.length > 0 && (
-                        <div className="flex rounded-full bg-zinc-100 p-1 text-sm dark:bg-zinc-800">
+                        <div className="flex rounded-full bg-subtle p-1 text-sm">
                             {[
                                 [true, `Eleitos (${winners.length})`],
                                 [false, `Todos (${allRows.length})`],
@@ -80,8 +80,8 @@ export default function CandidateResults({
                                     className={cn(
                                         'rounded-full px-3 py-1 font-medium',
                                         onlyWinners === value
-                                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-                                            : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
+                                            ? 'bg-surface text-ink shadow-sm'
+                                            : 'text-muted hover:text-ink',
                                     )}
                                 >
                                     {label}
@@ -90,14 +90,14 @@ export default function CandidateResults({
                         </div>
                     )}
                     {seatsByParty.length > 0 && (
-                        <p className="flex flex-wrap gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                        <p className="flex flex-wrap gap-1.5 text-xs text-muted">
                             {seatsByParty.map(([party, seats]) => (
                                 <span
                                     key={party}
-                                    className="rounded-full border border-zinc-200 px-2 py-0.5 dark:border-zinc-700"
+                                    className="rounded-full border border-line px-2 py-0.5"
                                 >
                                     {party}{' '}
-                                    <strong className="text-zinc-900 tabular-nums dark:text-zinc-50">
+                                    <strong className="text-ink tabular-nums">
                                         {seats}
                                     </strong>
                                 </span>
@@ -106,7 +106,7 @@ export default function CandidateResults({
                     )}
                 </div>
             ) : (
-                <div className="flex h-4 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                <div className="flex h-4 overflow-hidden rounded-full bg-track">
                     {rows.map((row) => (
                         <div
                             key={row.candidate_id}
@@ -145,7 +145,7 @@ export default function CandidateResults({
                     return (
                         <li
                             key={candidate.id}
-                            className="relative overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                            className="relative overflow-hidden rounded-xl border border-line bg-surface p-4"
                         >
                             <span
                                 className="absolute inset-y-0 left-0 w-1.5"
@@ -162,7 +162,7 @@ export default function CandidateResults({
                                     }}
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <p className="flex items-center gap-2 font-semibold text-zinc-900 dark:text-zinc-50">
+                                    <p className="flex items-center gap-2 font-semibold text-ink">
                                         <span className="truncate">
                                             {candidate.name}
                                         </span>
@@ -174,7 +174,7 @@ export default function CandidateResults({
                                                     title="Comemorar de novo"
                                                     className={cn(
                                                         badgeClass,
-                                                        'hover:bg-emerald-700',
+                                                        'hover:bg-success-hover',
                                                     )}
                                                 >
                                                     🎉 {winnerLabel(winner)}
@@ -185,7 +185,7 @@ export default function CandidateResults({
                                                 </span>
                                             ))}
                                     </p>
-                                    <p className="truncate text-xs text-zinc-500">
+                                    <p className="truncate text-xs text-muted">
                                         {candidate.party} · {candidate.number}
                                     </p>
                                 </div>
@@ -193,13 +193,13 @@ export default function CandidateResults({
                                     <p
                                         className={
                                             index < 2 && !proportional
-                                                ? 'text-2xl font-bold text-zinc-900 tabular-nums dark:text-zinc-50'
-                                                : 'text-lg font-semibold text-zinc-800 tabular-nums dark:text-zinc-200'
+                                                ? 'text-2xl font-bold text-ink tabular-nums'
+                                                : 'text-lg font-semibold text-ink tabular-nums'
                                         }
                                     >
                                         {formatPercent(row.percent)}
                                     </p>
-                                    <p className="text-xs text-zinc-500 tabular-nums">
+                                    <p className="text-xs text-muted tabular-nums">
                                         {formatNumber(row.votes)} votos
                                     </p>
                                 </div>
@@ -213,7 +213,7 @@ export default function CandidateResults({
                 <button
                     type="button"
                     onClick={() => setVisible((count) => count + PAGE_SIZE)}
-                    className="w-full rounded-xl border border-zinc-200 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50"
+                    className="w-full rounded-xl border border-line py-2 text-sm font-medium text-ink hover:bg-subtle"
                 >
                     Mostrar mais ({formatNumber(filtered.length - rows.length)}{' '}
                     restantes)
