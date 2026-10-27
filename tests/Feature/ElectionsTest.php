@@ -239,3 +239,8 @@ test('offices listed before are kept when the index stops listing them', functio
 
     expect(Election::query()->where('tse_code', 619)->sole()->offices->all())->toBe([Office::Mayor, Office::Councillor]);
 });
+
+test('every office fits in the office columns', function () {
+    // MySQL rejects longer values; SQLite, used by the tests, does not.
+    expect(max(array_map(fn (Office $office): int => strlen($office->value), Office::cases())))->toBeLessThanOrEqual(30);
+});

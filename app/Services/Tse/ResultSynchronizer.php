@@ -346,7 +346,12 @@ class ResultSynchronizer
         }
 
         $synced = 0;
-        $this->progress->start(sprintf('%s: %s municípios a baixar', $office->label(), number_format(count($municipalities), 0, ',', '.')), count($municipalities));
+        $this->progress->start(sprintf(
+            '%s: %s %s a baixar',
+            $office->label(),
+            number_format(count($municipalities), 0, ',', '.'),
+            count($municipalities) === 1 ? 'município' : 'municípios',
+        ), count($municipalities));
 
         try {
             foreach (array_chunk($municipalities, self::MUNICIPALITY_BATCH, preserve_keys: true) as $chunk) {
