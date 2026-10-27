@@ -185,29 +185,29 @@ flowchart LR
 
 Alguns problemas que exigiram mais cuidado:
 
-| Problema | Solução |
-| --- | --- |
-| O TSE bloqueia com **HTTP 429** quem pede demais. | Todos os pedidos passam por um cliente com concorrência limitada. Ao primeiro 429, todo pedido ao TSE pausa de forma coordenada, com pausas mais longas se o bloqueio se repete. Tarefas longas param e retomam de onde estavam. |
-| São **milhares de municípios** por cargo, atualizando o tempo todo. | Sincronização incremental pelo arquivo de andamento e gravação só do que mudou; uma eleição já concluída não é baixada de novo. |
-| **"Matematicamente eleito"** e **2º turno garantido** sem esperar o TSE. | Cálculo conservador: supõe que todos os eleitores que faltam votam do pior jeito possível para quem lidera. Um candidato tem vaga garantida no 2º turno quando os dois rivais mais próximos não conseguem ultrapassá-lo juntos. |
-| Muita gente abrindo a página na mesma hora. | Cache versionado e pré-aquecido: as páginas são calculadas uma vez por mudança de dados, não uma vez por visitante. |
-| **Mapa com 5.570 polígonos** fluido no celular. | Geometria gerada a partir da malha do IBGE e simplificada em caminhos SVG compactos, servida com ETag e guardada pelo service worker. Durante zoom e voo, só uma transformação CSS acelerada pela GPU muda; o desenho é refeito uma única vez no fim. |
-| **Notificações sem biblioteca** de Web Push. | Assinatura VAPID (ES256) implementada com OpenSSL. O push vai sem conteúdo, e o service worker busca a mensagem do seu navegador, o que dispensa a criptografia do conteúdo. |
-| Tarefas do painel que levam **horas** (fotos de 450 mil candidatos). | Fila própria, com worker separado e prazos compatíveis, para nunca atrasar as notificações; a saída do comando é gravada enquanto roda. Uma trava impede que a sincronização manual e a agendada rodem juntas. |
+| Problema                                                                 | Solução                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O TSE bloqueia com **HTTP 429** quem pede demais.                        | Todos os pedidos passam por um cliente com concorrência limitada. Ao primeiro 429, todo pedido ao TSE pausa de forma coordenada, com pausas mais longas se o bloqueio se repete. Tarefas longas param e retomam de onde estavam.                      |
+| São **milhares de municípios** por cargo, atualizando o tempo todo.      | Sincronização incremental pelo arquivo de andamento e gravação só do que mudou; uma eleição já concluída não é baixada de novo.                                                                                                                       |
+| **"Matematicamente eleito"** e **2º turno garantido** sem esperar o TSE. | Cálculo conservador: supõe que todos os eleitores que faltam votam do pior jeito possível para quem lidera. Um candidato tem vaga garantida no 2º turno quando os dois rivais mais próximos não conseguem ultrapassá-lo juntos.                       |
+| Muita gente abrindo a página na mesma hora.                              | Cache versionado e pré-aquecido: as páginas são calculadas uma vez por mudança de dados, não uma vez por visitante.                                                                                                                                   |
+| **Mapa com 5.570 polígonos** fluido no celular.                          | Geometria gerada a partir da malha do IBGE e simplificada em caminhos SVG compactos, servida com ETag e guardada pelo service worker. Durante zoom e voo, só uma transformação CSS acelerada pela GPU muda; o desenho é refeito uma única vez no fim. |
+| **Notificações sem biblioteca** de Web Push.                             | Assinatura VAPID (ES256) implementada com OpenSSL. O push vai sem conteúdo, e o service worker busca a mensagem do seu navegador, o que dispensa a criptografia do conteúdo.                                                                          |
+| Tarefas do painel que levam **horas** (fotos de 450 mil candidatos).     | Fila própria, com worker separado e prazos compatíveis, para nunca atrasar as notificações; a saída do comando é gravada enquanto roda. Uma trava impede que a sincronização manual e a agendada rodem juntas.                                        |
 
 ## Tecnologias
 
-| Camada | Tecnologia |
-| --- | --- |
-| Backend | [PHP 8.5](https://www.php.net/), [Laravel 13](https://laravel.com/) |
-| Frontend | [React 19](https://react.dev/) com [React Compiler](https://react.dev/learn/react-compiler), [TypeScript](https://www.typescriptlang.org/) |
+| Camada              | Tecnologia                                                                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend             | [PHP 8.5](https://www.php.net/), [Laravel 13](https://laravel.com/)                                                                                      |
+| Frontend            | [React 19](https://react.dev/) com [React Compiler](https://react.dev/learn/react-compiler), [TypeScript](https://www.typescriptlang.org/)               |
 | Ponte entre os dois | [Inertia.js 3](https://inertiajs.com/) (props adiadas, polling, view transitions) e [Wayfinder](https://github.com/laravel/wayfinder) para rotas tipadas |
-| Estilo | [Tailwind CSS 4](https://tailwindcss.com/) com tokens de cor semânticos |
-| Build | Vite+ (Vite, Rolldown, lint e formatação) |
-| Dados | SQLite ou MySQL, cache e fila no banco |
-| Tempo real | Agendador do Laravel, filas, Web Push (VAPID), service worker e PWA |
-| Testes e qualidade | [Pest 5](https://pestphp.com/), [Larastan/PHPStan](https://github.com/larastan/larastan), [Pint](https://laravel.com/docs/pint), `tsc` |
-| CI/CD | GitHub Actions |
+| Estilo              | [Tailwind CSS 4](https://tailwindcss.com/) com tokens de cor semânticos                                                                                  |
+| Build               | Vite+ (Vite, Rolldown, lint e formatação)                                                                                                                |
+| Dados               | SQLite ou MySQL, cache e fila no banco                                                                                                                   |
+| Tempo real          | Agendador do Laravel, filas, Web Push (VAPID), service worker e PWA                                                                                      |
+| Testes e qualidade  | [Pest 5](https://pestphp.com/), [Larastan/PHPStan](https://github.com/larastan/larastan), [Pint](https://laravel.com/docs/pint), `tsc`                   |
+| CI/CD               | GitHub Actions                                                                                                                                           |
 
 ## Rodando localmente
 
@@ -246,17 +246,17 @@ php artisan push:gerar-chaves
 
 ## Comandos
 
-| Comando | O que faz |
-| --- | --- |
-| `tse:descobrir` | Cadastra as eleições publicadas no índice do TSE |
-| `tse:sincronizar` | Sincroniza as eleições em apuração (`--eleicao`, `--completo`) |
-| `tse:importar` | Importa as eleições já encerradas (`--revisar` busca retotalizações) |
-| `tse:baixar-base` | Descobre e baixa todas as eleições que o TSE ainda publica |
-| `tse:fotos` | Baixa as fotos dos candidatos (`--encerradas`, `--eleicao`, `--cargo`) |
-| `mapa:baixar` | Gera a geometria do mapa a partir da malha do IBGE |
-| `resultados:limpar-cache` | Faz as páginas de resultados serem calculadas de novo |
-| `push:gerar-chaves` | Gera o par de chaves VAPID das notificações |
-| `usuarios:criar` | Cria um usuário da área administrativa |
+| Comando                   | O que faz                                                              |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `tse:descobrir`           | Cadastra as eleições publicadas no índice do TSE                       |
+| `tse:sincronizar`         | Sincroniza as eleições em apuração (`--eleicao`, `--completo`)         |
+| `tse:importar`            | Importa as eleições já encerradas (`--revisar` busca retotalizações)   |
+| `tse:baixar-base`         | Descobre e baixa todas as eleições que o TSE ainda publica             |
+| `tse:fotos`               | Baixa as fotos dos candidatos (`--encerradas`, `--eleicao`, `--cargo`) |
+| `mapa:baixar`             | Gera a geometria do mapa a partir da malha do IBGE                     |
+| `resultados:limpar-cache` | Faz as páginas de resultados serem calculadas de novo                  |
+| `push:gerar-chaves`       | Gera o par de chaves VAPID das notificações                            |
+| `usuarios:criar`          | Cria um usuário da área administrativa                                 |
 
 ## Qualidade e testes
 
