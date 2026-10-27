@@ -1,6 +1,8 @@
 import { Head, Link, router, useHttp, usePoll } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import CandidateResults from '@/components/candidate-results';
+import CountProgress from '@/components/count-progress';
+import HowToRead from '@/components/how-to-read';
 import MunicipalityPanel from '@/components/municipality-panel';
 import MunicipalityPicker from '@/components/municipality-picker';
 import NotificationToggle from '@/components/notification-toggle';
@@ -9,16 +11,11 @@ import ResultsMap from '@/components/results-map';
 import SkipLink from '@/components/skip-link';
 import StateList from '@/components/state-list';
 import StatesTable from '@/components/states-table';
+import VoteBreakdown from '@/components/vote-breakdown';
 import WinnerCelebration from '@/components/winner-celebration';
 import type { CelebratedWinner } from '@/components/winner-celebration';
 import { dayLabel, STATUS } from '@/lib/election';
-import {
-    formatDate,
-    formatLongDate,
-    formatDateTime,
-    formatNumber,
-    formatPercent,
-} from '@/lib/format';
+import { formatLongDate, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { index as electionsIndex, show } from '@/routes/elections';
 import { show as showMunicipality } from '@/routes/municipalities';
@@ -452,55 +449,32 @@ export default function ResultsIndex({
                             />
                         </section>
                     ) : !summary ? (
-                        <div className="rounded-xl border border-dashed border-line-strong p-10 text-center text-muted">
+                        <p className="rounded-2xl border border-dashed border-line-strong p-10 text-center text-lg text-muted">
                             {election.status === 'agendada'
-                                ? `A apuração começa em ${formatDate(election.date)}, às 17h.`
-                                : `Ainda não há resultados de ${officeLabel} sincronizados para esta eleição.`}
-                        </div>
+                                ? `A apuração começa em ${formatLongDate(election.date)}, às 17h (horário de Brasília).`
+                                : `Os resultados de ${officeLabel} ainda não chegaram do TSE.`}
+                        </p>
                     ) : (
                         <>
-                            <section className="space-y-4">
-                                <div className="rounded-2xl border border-line bg-surface p-5">
-                                    <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                                        <div>
-                                            <p className="text-sm text-muted">
-                                                Seções apuradas
-                                            </p>
-                                            <p className="text-4xl font-bold text-ink tabular-nums">
-                                                {formatPercent(
-                                                    summary.counted_percent,
-                                                )}
-                                            </p>
-                                        </div>
-                                        <p className="flex items-center gap-2 text-xs text-muted">
-                                            {summary.is_final ? (
-                                                <span className="rounded-full bg-track px-2 py-0.5 font-medium">
-                                                    Apuração encerrada
-                                                </span>
-                                            ) : !live ? (
-                                                <span className="rounded-full bg-track px-2 py-0.5 font-medium">
-                                                    Resultado parcial
-                                                </span>
-                                            ) : (
-                                                <span className="flex items-center gap-1.5 font-medium text-live">
-                                                    <span className="relative flex size-2">
-                                                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-75" />
-                                                        <span className="relative inline-flex size-2 rounded-full bg-live" />
-                                                    </span>
-                                                    AO VIVO
-                                                </span>
-                                            )}
-                                            Atualizado pelo TSE em{' '}
-                                            {formatDateTime(summary.updated_at)}
+                            <section
+                                aria-label="Resultado"
+                                className="space-y-6 rounded-2xl border border-line bg-surface p-5"
+                            >
+                                <CountProgress
+                                    summary={summary}
+                                    live={live}
+                                    updateEvery={POLL_INTERVAL / 1000}
+                                />
+                                <div className="space-y-3">
+                                    <div>
+                                        <h2 className="text-xl font-bold">
+                                            {proportional
+                                                ? 'Votos por candidato'
+                                                : 'Quem está na frente'}
+                                        </h2>
+                                        <p className="text-muted">
+                                            Percentuais sobre os votos válidos.
                                         </p>
-                                    </div>
-                                    <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-track">
-                                        <div
-                                            className="h-full bg-success transition-all duration-700"
-                                            style={{
-                                                width: `${summary.counted_percent}%`,
-                                            }}
-                                        />
                                     </div>
                                     <CandidateResults
                                         key={`${office}-${state}`}
@@ -515,36 +489,30 @@ export default function ResultsIndex({
                                         }
                                     />
                                 </div>
-
-                                <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
-                                    {[
-                                        ['Eleitorado', summary.electorate],
-                                        ['Comparecimento', summary.turnout],
-                                        ['Abstenções', summary.abstentions],
-                                        ['Votos válidos', summary.valid_votes],
-                                        ['Brancos', summary.blank_votes],
-                                        ['Nulos', summary.null_votes],
-                                    ].map(([label, value]) => (
-                                        <div
-                                            key={label}
-                                            className="rounded-xl border border-line bg-surface px-4 py-3"
-                                        >
-                                            <dt className="text-xs text-muted">
-                                                {label}
-                                            </dt>
-                                            <dd className="text-lg font-semibold text-ink tabular-nums">
-                                                {formatNumber(Number(value))}
-                                            </dd>
-                                        </div>
-                                    ))}
-                                </dl>
                             </section>
 
+                            <VoteBreakdown summary={summary} />
+
+                            <HowToRead
+                                proportional={proportional}
+                                hasMap={
+                                    !proportional &&
+                                    !isMunicipal &&
+                                    mapAvailable
+                                }
+                            />
+
                             {!proportional && !isMunicipal && (
-                                <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                                <section
+                                    aria-labelledby="mapa"
+                                    className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+                                >
                                     <div className="rounded-2xl border border-line bg-surface p-4">
                                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                            <h2 className="font-semibold text-ink">
+                                            <h2
+                                                id="mapa"
+                                                className="text-xl font-bold"
+                                            >
                                                 Quem lidera em cada município
                                             </h2>
                                             {isNationwide && (
@@ -556,7 +524,7 @@ export default function ResultsIndex({
                                                             event.target.value,
                                                         )
                                                     }
-                                                    className="rounded-lg border border-line-strong bg-surface px-2 py-1 text-sm"
+                                                    className="min-h-11 rounded-xl border-2 border-line-strong bg-surface px-3"
                                                 >
                                                     <option value="">
                                                         Brasil
@@ -600,14 +568,15 @@ export default function ResultsIndex({
                                             </p>
                                         )}
 
-                                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+                                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
                                             {candidates.map((candidate) => (
                                                 <span
                                                     key={candidate.id}
                                                     className="flex items-center gap-1.5"
                                                 >
                                                     <span
-                                                        className="size-3 rounded-sm"
+                                                        aria-hidden="true"
+                                                        className="size-3.5 rounded-sm"
                                                         style={{
                                                             backgroundColor:
                                                                 candidate.color,
@@ -617,12 +586,15 @@ export default function ResultsIndex({
                                                 </span>
                                             ))}
                                             <span className="flex items-center gap-1.5">
-                                                <span className="size-3 rounded-sm bg-track" />
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="size-3.5 rounded-sm bg-track"
+                                                />
                                                 Sem apuração
                                             </span>
                                             <span className="w-full sm:ml-auto sm:w-auto">
-                                                Cor mais forte = vitória mais
-                                                folgada
+                                                Quanto mais forte a cor, maior a
+                                                vantagem
                                             </span>
                                         </div>
                                     </div>
@@ -651,10 +623,10 @@ export default function ResultsIndex({
                     )}
                 </main>
 
-                <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-muted">
-                    Fonte: Tribunal Superior Eleitoral (resultados.tse.jus.br).
-                    {live &&
-                        ` Atualização automática a cada ${POLL_INTERVAL / 1000} segundos.`}
+                <footer className="mx-auto max-w-7xl px-4 pb-8 text-sm text-muted">
+                    Fonte: Tribunal Superior Eleitoral, em
+                    resultados.tse.jus.br. Este site não é do TSE: ele só mostra
+                    os dados oficiais divulgados pelo tribunal.
                 </footer>
             </div>
 

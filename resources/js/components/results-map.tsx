@@ -617,7 +617,7 @@ export default function ResultsMap({
 
             {hover && hoveredName && (
                 <div
-                    className="pointer-events-none absolute z-10 w-56 rounded-lg border border-line bg-surface p-3 text-xs shadow-lg"
+                    className="pointer-events-none absolute z-10 w-56 rounded-lg border border-line bg-surface p-3 text-sm shadow-lg"
                     style={{
                         left: Math.min(hover.x + 14, width - TOOLTIP_WIDTH - 6),
                         top: hover.y + 14,

@@ -17,7 +17,7 @@ type Props = {
 const PAGE_SIZE = 30;
 
 const badgeClass =
-    'shrink-0 rounded-full bg-success px-2 py-0.5 text-[10px] font-bold tracking-wide text-on-success uppercase';
+    'shrink-0 rounded-full bg-success px-2.5 py-0.5 text-xs font-bold text-on-success';
 
 function winnerLabel(winner: Winner): string {
     return winner.status === 'elected' ? 'Eleito' : 'Matematicamente eleito';
@@ -65,7 +65,11 @@ export default function CandidateResults({
             {proportional ? (
                 <div className="flex flex-wrap items-center gap-2">
                     {winners.length > 0 && (
-                        <div className="flex rounded-full bg-subtle p-1 text-sm">
+                        <div
+                            role="group"
+                            aria-label="Mostrar"
+                            className="flex rounded-full bg-subtle p-1"
+                        >
                             {[
                                 [true, `Eleitos (${winners.length})`],
                                 [false, `Todos (${allRows.length})`],
@@ -73,12 +77,13 @@ export default function CandidateResults({
                                 <button
                                     key={String(value)}
                                     type="button"
+                                    aria-pressed={onlyWinners === value}
                                     onClick={() => {
                                         setOnlyWinners(value as boolean);
                                         setVisible(PAGE_SIZE);
                                     }}
                                     className={cn(
-                                        'rounded-full px-3 py-1 font-medium',
+                                        'min-h-10 rounded-full px-4 font-semibold',
                                         onlyWinners === value
                                             ? 'bg-surface text-ink shadow-sm'
                                             : 'text-muted hover:text-ink',
@@ -90,7 +95,10 @@ export default function CandidateResults({
                         </div>
                     )}
                     {seatsByParty.length > 0 && (
-                        <p className="flex flex-wrap gap-1.5 text-xs text-muted">
+                        <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
+                            <span className="font-semibold text-ink">
+                                Vagas por partido:
+                            </span>
                             {seatsByParty.map(([party, seats]) => (
                                 <span
                                     key={party}
@@ -106,7 +114,10 @@ export default function CandidateResults({
                     )}
                 </div>
             ) : (
-                <div className="flex h-4 overflow-hidden rounded-full bg-track">
+                <div
+                    aria-hidden="true"
+                    className="flex h-4 overflow-hidden rounded-full bg-track"
+                >
                     {rows.map((row) => (
                         <div
                             key={row.candidate_id}
@@ -162,8 +173,11 @@ export default function CandidateResults({
                                     }}
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <p className="flex items-center gap-2 font-semibold text-ink">
-                                        <span className="truncate">
+                                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg leading-tight font-bold text-ink">
+                                        <span className="sr-only">
+                                            {index + 1}º lugar:{' '}
+                                        </span>
+                                        <span className="min-w-0 break-words">
                                             {candidate.name}
                                         </span>
                                         {winner &&
@@ -185,8 +199,9 @@ export default function CandidateResults({
                                                 </span>
                                             ))}
                                     </p>
-                                    <p className="truncate text-xs text-muted">
-                                        {candidate.party} · {candidate.number}
+                                    <p className="mt-0.5 text-sm text-muted">
+                                        {candidate.party} · número{' '}
+                                        {candidate.number}
                                     </p>
                                 </div>
                                 <div className="text-right">
@@ -199,7 +214,7 @@ export default function CandidateResults({
                                     >
                                         {formatPercent(row.percent)}
                                     </p>
-                                    <p className="text-xs text-muted tabular-nums">
+                                    <p className="text-sm text-muted tabular-nums">
                                         {formatNumber(row.votes)} votos
                                     </p>
                                 </div>
@@ -213,7 +228,7 @@ export default function CandidateResults({
                 <button
                     type="button"
                     onClick={() => setVisible((count) => count + PAGE_SIZE)}
-                    className="w-full rounded-xl border border-line py-2 text-sm font-medium text-ink hover:bg-subtle"
+                    className="min-h-12 w-full rounded-xl border-2 border-line-strong font-semibold text-ink hover:border-primary hover:bg-primary-soft"
                 >
                     Mostrar mais ({formatNumber(filtered.length - rows.length)}{' '}
                     restantes)

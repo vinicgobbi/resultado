@@ -21,10 +21,10 @@ export default function StatesTable({
                 <caption className="sr-only">
                     Quem lidera em cada estado e quanto já foi apurado
                 </caption>
-                <thead className="bg-subtle text-left text-xs text-muted uppercase">
+                <thead className="bg-subtle text-left text-sm text-muted">
                     <tr>
-                        <th className="px-3 py-2 font-medium">UF</th>
-                        <th className="px-3 py-2 font-medium">Votação</th>
+                        <th className="px-3 py-2 font-medium">Estado</th>
+                        <th className="px-3 py-2 font-medium">Quem lidera</th>
                         <th className="px-3 py-2 text-right font-medium">
                             Apurado
                         </th>
@@ -100,14 +100,14 @@ export default function StatesTable({
                                                 />
                                             ))}
                                         </div>
-                                        <span className="w-28 truncate text-xs text-muted">
+                                        <span className="w-36 truncate text-sm text-muted">
                                             {leader && leaderResult
                                                 ? `${leader.name} ${formatPercent(leaderResult.percent)}`
                                                 : '—'}
                                         </span>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right text-xs text-muted tabular-nums">
+                                <td className="px-3 py-2 text-right text-sm text-muted tabular-nums">
                                     {formatPercent(state.counted_percent)}
                                 </td>
                             </tr>

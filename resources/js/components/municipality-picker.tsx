@@ -58,7 +58,7 @@ export default function MunicipalityPicker({ municipalities, href }: Props) {
                                     {municipality.name}
                                 </span>
                                 {!municipality.is_final && (
-                                    <span className="shrink-0 text-xs text-muted tabular-nums">
+                                    <span className="shrink-0 text-sm text-muted tabular-nums">
                                         {formatPercent(
                                             municipality.counted_percent,
                                         )}

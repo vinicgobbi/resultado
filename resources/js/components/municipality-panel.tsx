@@ -33,13 +33,13 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                         <h3 className="font-semibold text-ink">
                             {detail.name} – {detail.state}
                             {detail.is_capital && (
-                                <span className="ml-2 text-xs font-normal text-muted">
+                                <span className="ml-2 text-sm font-normal text-muted">
                                     capital
                                 </span>
                             )}
                         </h3>
                         {detail.result && (
-                            <p className="text-xs text-muted">
+                            <p className="text-sm text-muted">
                                 {formatPercent(detail.result.counted_percent)}{' '}
                                 apurado · atualizado{' '}
                                 {formatDateTime(detail.result.updated_at)}
@@ -82,7 +82,7 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                                         </span>
                                         <span className="tabular-nums">
                                             {formatPercent(result.percent)}{' '}
-                                            <span className="text-xs text-muted">
+                                            <span className="text-sm text-muted">
                                                 ({formatNumber(result.votes)})
                                             </span>
                                         </span>
@@ -101,7 +101,7 @@ export default function MunicipalityPanel({ detail, loading, onClose }: Props) {
                             );
                         })}
                     </ul>
-                    <dl className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                    <dl className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
                         {[
                             ['Brancos', detail.result.blank_votes],
                             ['Nulos', detail.result.null_votes],
