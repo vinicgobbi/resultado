@@ -46,7 +46,7 @@ Schedule::command('queue:work --stop-when-empty --max-time=60')
 
 // Tasks started from the admin dashboard run on their own queue, so a long
 // one (all the photos, a whole election) never holds up the notifications.
-Schedule::command('queue:work database-admin --queue=admin --stop-when-empty --timeout=3600')
+Schedule::command('queue:work database-admin --queue=admin --stop-when-empty --timeout=14400')
     ->everyFifteenSeconds()
-    ->withoutOverlapping(70)
+    ->withoutOverlapping(250)
     ->runInBackground();

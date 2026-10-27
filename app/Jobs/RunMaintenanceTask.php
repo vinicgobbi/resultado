@@ -19,9 +19,10 @@ class RunMaintenanceTask implements ShouldQueue
     use Queueable;
 
     /**
-     * Importing or downloading every photo can take long.
+     * Importing an election or downloading the photos of a municipal one
+     * (hundreds of thousands) can take more than an hour.
      */
-    public int $timeout = 3600;
+    public int $timeout = 14_400;
 
     public int $tries = 1;
 

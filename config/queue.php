@@ -52,7 +52,7 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => 'admin',
-            'retry_after' => 3900,
+            'retry_after' => 15_000,
             'after_commit' => false,
         ],
 
