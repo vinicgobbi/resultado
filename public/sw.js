@@ -97,10 +97,9 @@ async function pendingMessages() {
     const hash = [...new Uint8Array(digest)]
         .map((byte) => byte.toString(16).padStart(2, '0'))
         .join('');
-    const response = await fetch(
-        `/notificacoes/pendentes?inscricao=${hash}`,
-        { cache: 'no-store' },
-    );
+    const response = await fetch(`/notificacoes/pendentes?inscricao=${hash}`, {
+        cache: 'no-store',
+    });
 
     return response.ok ? response.json() : [];
 }
@@ -109,64 +108,62 @@ async function pendingMessages() {
  * The national summary, for a push without waiting messages.
  */
 function showSummary() {
-    return (
-        fetch('/resumo.json', { cache: 'no-store' })
-            .then((response) => response.json())
-            .then((summary) => {
-                const percent = (value) =>
-                    `${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+    return fetch('/resumo.json', { cache: 'no-store' })
+        .then((response) => response.json())
+        .then((summary) => {
+            const percent = (value) =>
+                `${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
-                const leaders = summary.candidates
-                    .slice(0, 2)
-                    .map(
-                        (candidate) =>
-                            `${candidate.name} ${percent(candidate.percent)}`,
-                    )
-                    .join(' × ');
+            const leaders = summary.candidates
+                .slice(0, 2)
+                .map(
+                    (candidate) =>
+                        `${candidate.name} ${percent(candidate.percent)}`,
+                )
+                .join(' × ');
 
-                const counted = `${percent(summary.counted_percent)} das urnas apuradas`;
-                const runoff = summary.runoff;
-                const names = runoff?.names.filter(Boolean) ?? [];
+            const counted = `${percent(summary.counted_percent)} das urnas apuradas`;
+            const runoff = summary.runoff;
+            const names = runoff?.names.filter(Boolean) ?? [];
 
-                // A winner first, then a runoff that is sure to happen, then
-                // the progress of the count.
-                const title = summary.winner
-                    ? `🎉 ${summary.winner.name} ${summary.winner.status === 'elected' ? 'está eleito!' : 'está matematicamente eleito!'}`
-                    : runoff
-                      ? runoff.status === 'confirmed' && names.length === 2
-                          ? `🗳️ ${names[0]} e ${names[1]} vão ao 2º turno`
-                          : names.length === 2
-                            ? `🗳️ Vai ter 2º turno: ${names[0]} × ${names[1]}`
-                            : '🗳️ Vai ter 2º turno'
-                      : summary.is_final
-                        ? `Apuração encerrada (${summary.round}º turno)`
-                        : counted;
+            // A winner first, then a runoff that is sure to happen, then
+            // the progress of the count.
+            const title = summary.winner
+                ? `🎉 ${summary.winner.name} ${summary.winner.status === 'elected' ? 'está eleito!' : 'está matematicamente eleito!'}`
+                : runoff
+                  ? runoff.status === 'confirmed' && names.length === 2
+                      ? `🗳️ ${names[0]} e ${names[1]} vão ao 2º turno`
+                      : names.length === 2
+                        ? `🗳️ Vai ter 2º turno: ${names[0]} × ${names[1]}`
+                        : '🗳️ Vai ter 2º turno'
+                  : summary.is_final
+                    ? `Apuração encerrada (${summary.round}º turno)`
+                    : counted;
 
-                const body =
-                    runoff && runoff.status !== 'confirmed' && names.length < 2
-                        ? `${names.length === 1 ? `${names[0]} já garantiu vaga; a outra está em disputa.` : 'As duas vagas ainda estão em disputa.'} ${counted}.`
-                        : runoff || summary.winner
-                          ? `${leaders} · ${counted}`
-                          : leaders;
+            const body =
+                runoff && runoff.status !== 'confirmed' && names.length < 2
+                    ? `${names.length === 1 ? `${names[0]} já garantiu vaga; a outra está em disputa.` : 'As duas vagas ainda estão em disputa.'} ${counted}.`
+                    : runoff || summary.winner
+                      ? `${leaders} · ${counted}`
+                      : leaders;
 
-                return self.registration.showNotification(title, {
-                    body: body || 'Novos resultados disponíveis.',
-                    icon: '/app-icons/icon-192.png',
-                    badge: '/app-icons/icon-192.png',
-                    tag: 'apuracao-brasil',
-                    renotify: true,
-                    data: { url: '/' },
-                });
-            })
-            .catch(() =>
-                self.registration.showNotification('Eleições 2026', {
-                    body: 'O TSE publicou novos resultados.',
-                    icon: '/app-icons/icon-192.png',
-                    tag: 'apuracao-brasil',
-                    data: { url: '/' },
-                }),
-            )
-    );
+            return self.registration.showNotification(title, {
+                body: body || 'Novos resultados disponíveis.',
+                icon: '/app-icons/icon-192.png',
+                badge: '/app-icons/icon-192.png',
+                tag: 'apuracao-brasil',
+                renotify: true,
+                data: { url: '/' },
+            });
+        })
+        .catch(() =>
+            self.registration.showNotification('Eleições 2026', {
+                body: 'O TSE publicou novos resultados.',
+                icon: '/app-icons/icon-192.png',
+                tag: 'apuracao-brasil',
+                data: { url: '/' },
+            }),
+        );
 }
 
 self.addEventListener('push', (event) => {
