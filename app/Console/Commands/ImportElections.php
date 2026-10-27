@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\ConsoleSyncProgress;
 use App\Models\Election;
 use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
@@ -48,26 +49,24 @@ class ImportElections extends Command
             return self::SUCCESS;
         }
 
+        $progress = new ConsoleSyncProgress($this);
+
         foreach ($elections as $election) {
+            $progress->heading($election);
             $started = microtime(true);
 
             try {
-                $totals = $synchronizer->sync($election);
+                $totals = $synchronizer->sync($election, progress: $progress);
             } catch (RateLimitedException $exception) {
                 $this->components->warn($exception->getMessage().' A importação continua na próxima execução.');
 
                 return self::FAILURE;
             }
 
-            $this->components->info(sprintf(
-                '%s: %d resultados estaduais e %d municipais importados em %.1fs%s.',
-                $election->name,
-                $totals['states'],
-                $totals['municipalities'],
-                microtime(true) - $started,
-                $totals['complete'] ? '; concluída' : '',
-            ));
+            $progress->summary($totals, microtime(true) - $started);
         }
+
+        $this->newLine();
 
         return self::SUCCESS;
     }

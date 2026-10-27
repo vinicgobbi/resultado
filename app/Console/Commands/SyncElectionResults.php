@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\ConsoleSyncProgress;
 use App\Jobs\SendResultsNotification;
 use App\Models\Election;
 use App\Services\Tse\RateLimitedException;
@@ -33,10 +34,13 @@ class SyncElectionResults extends Command
         }
 
         $countryChanged = false;
+        $progress = new ConsoleSyncProgress($this);
 
         foreach ($elections as $election) {
+            $progress->heading($election);
+
             if (! $this->option('completo') && $election->completed_at !== null) {
-                $this->components->info("{$election->name}: já concluída e sincronizada; nada a baixar.");
+                $this->components->info('Já concluída e sincronizada; nada a baixar.');
 
                 continue;
             }
@@ -44,7 +48,7 @@ class SyncElectionResults extends Command
             $started = microtime(true);
 
             try {
-                $totals = $synchronizer->sync($election, (bool) $this->option('completo'));
+                $totals = $synchronizer->sync($election, (bool) $this->option('completo'), $progress);
             } catch (RateLimitedException $exception) {
                 $this->components->warn($exception->getMessage());
 
@@ -52,16 +56,10 @@ class SyncElectionResults extends Command
             }
 
             $countryChanged = $countryChanged || $totals['country_changed'];
-
-            $this->components->info(sprintf(
-                '%s%s: %d resultados estaduais e %d municipais atualizados em %.1fs.',
-                $election->name,
-                $totals['counted_percent'] === null ? '' : ' ('.number_format($totals['counted_percent'], 2, ',', '.').'% das seções apuradas)',
-                $totals['states'],
-                $totals['municipalities'],
-                microtime(true) - $started,
-            ));
+            $progress->summary($totals, microtime(true) - $started);
         }
+
+        $this->newLine();
 
         if ($countryChanged && ! $this->option('sem-notificacao') && WebPush::isConfigured()) {
             SendResultsNotification::dispatch();
