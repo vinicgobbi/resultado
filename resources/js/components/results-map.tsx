@@ -2,12 +2,18 @@ import {
     memo,
     useEffect,
     useEffectEvent,
+    useId,
     useLayoutEffect,
     useRef,
     useState,
 } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type {
+    KeyboardEvent as ReactKeyboardEvent,
+    PointerEvent as ReactPointerEvent,
+} from 'react';
+import MunicipalityTable from '@/components/municipality-table';
 import { formatPercent } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { geometry as geometryRoute } from '@/routes/map';
 import type { Candidate, MapGeometry, MapResults } from '@/types';
 
@@ -30,6 +36,9 @@ const MIN_ZOOM_WIDTH = 8;
 const WHEEL_SETTLE_MS = 150;
 
 const TOOLTIP_WIDTH = 224;
+
+/** Share of the visible map moved by each arrow key. */
+const KEY_PAN = 0.15;
 
 /**
  * The map is drawn this many visible widths beyond each edge (the SVG is
@@ -127,6 +136,8 @@ export default function ResultsMap({
     const [viewBox, setViewBox] = useState<ViewBox | null>(null);
     const [hover, setHover] = useState<Hover | null>(null);
     const [width, setWidth] = useState(0);
+    const [view, setView] = useState<'mapa' | 'lista'>('mapa');
+    const hintId = useId();
     const frameRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     // While a gesture runs, the drawn map is only moved and scaled by the
@@ -197,8 +208,9 @@ export default function ResultsMap({
         applyTransform();
     }, [viewBox]);
 
-    // The frame only exists once the map is ready.
-    const ready = geometry !== null && viewBox !== null;
+    // The frame only exists once the map is ready, and while it is shown
+    // instead of the list.
+    const ready = geometry !== null && viewBox !== null && view === 'mapa';
 
     useEffect(() => {
         const frame = frameRef.current;
@@ -367,6 +379,48 @@ export default function ResultsMap({
         }
     }
 
+    function show(box: ViewBox) {
+        live.current = box;
+        setViewBox(box);
+    }
+
+    /**
+     * Arrows move the map, + and − zoom, 0 shows it whole again.
+     */
+    function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+        const box = currentBox();
+
+        if (!box) {
+            return;
+        }
+
+        const moves: Record<string, [number, number]> = {
+            ArrowLeft: [-1, 0],
+            ArrowRight: [1, 0],
+            ArrowUp: [0, -1],
+            ArrowDown: [0, 1],
+        };
+        const move = moves[event.key];
+
+        if (move) {
+            show({
+                ...box,
+                x: box.x + move[0] * box.w * KEY_PAN,
+                y: box.y + move[1] * box.h * KEY_PAN,
+            });
+        } else if (event.key === '+' || event.key === '=') {
+            zoomCenter(1 / 1.5);
+        } else if (event.key === '-') {
+            zoomCenter(1.5);
+        } else if (event.key === '0' && fullView) {
+            show(fullView);
+        } else {
+            return;
+        }
+
+        event.preventDefault();
+    }
+
     function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, {
@@ -508,152 +562,212 @@ export default function ResultsMap({
     const hoveredLeader =
         hovered?.[0] != null ? candidates.get(hovered[0]) : undefined;
 
+    const toggle = (
+        <div
+            role="group"
+            aria-label="Como ver"
+            className="mb-3 inline-flex rounded-full bg-subtle p-1"
+        >
+            {(
+                [
+                    ['mapa', 'Mapa'],
+                    ['lista', 'Lista'],
+                ] as const
+            ).map(([value, label]) => (
+                <button
+                    key={value}
+                    type="button"
+                    aria-pressed={view === value}
+                    onClick={() => setView(value)}
+                    className={cn(
+                        'min-h-10 rounded-full px-5 font-semibold',
+                        view === value
+                            ? 'bg-surface text-ink shadow-sm'
+                            : 'text-muted hover:text-ink',
+                    )}
+                >
+                    {label}
+                </button>
+            ))}
+        </div>
+    );
+
+    if (view === 'lista') {
+        return (
+            <div>
+                {toggle}
+                <MunicipalityTable
+                    names={geometry.names}
+                    results={results}
+                    candidates={candidates}
+                    selectedState={selectedState}
+                    onSelect={onSelect}
+                />
+            </div>
+        );
+    }
+
     return (
-        <div className="relative">
-            <div
-                ref={frameRef}
-                className="relative aspect-square w-full cursor-grab touch-none overflow-hidden select-none active:cursor-grabbing"
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                onPointerLeave={() => setHover(null)}
-            >
-                <svg
-                    ref={svgRef}
-                    viewBox={`${drawnBox.x} ${drawnBox.y} ${drawnBox.w} ${drawnBox.h}`}
-                    // 200% of the frame, centered on it (MARGIN); transforms
-                    // are relative to the frame's corner.
-                    className="absolute -top-1/2 -left-1/2 block size-[200%] origin-[25%_25%] will-change-transform"
-                    role="img"
-                    aria-label={
-                        restrictToState
-                            ? 'Mapa do estado com o candidato mais votado em cada município'
-                            : 'Mapa do Brasil com o candidato mais votado em cada município'
-                    }
-                >
-                    <g
-                        className="fill-track stroke-surface/60"
-                        strokeWidth={0.3 * unit}
-                    >
-                        <MunicipalityPaths
-                            geometry={geometry}
-                            results={results}
-                            candidates={candidates}
-                            selectedState={selectedState}
-                            restrictToState={restrictToState}
-                        />
-                    </g>
-                    {hoveredShape && (
-                        <path
-                            d={hoveredShape}
-                            fill="none"
-                            className="pointer-events-none stroke-ink"
-                            strokeWidth={1.5 * unit}
-                        />
-                    )}
-                    <g className="pointer-events-none" fill="none">
-                        {Object.entries(geometry.states)
-                            .filter(
-                                ([code]) =>
-                                    !restrictToState || code === selectedState,
-                            )
-                            .map(([code, state]) => (
-                                <path
-                                    key={code}
-                                    d={state.d}
-                                    className={
-                                        selectedState === code
-                                            ? 'stroke-ink'
-                                            : 'stroke-muted'
-                                    }
-                                    strokeWidth={
-                                        (selectedState === code ? 2 : 0.8) *
-                                        unit
-                                    }
-                                />
-                            ))}
-                    </g>
-                </svg>
-            </div>
-
-            <div className="absolute top-3 right-3 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow-sm">
-                {[
-                    {
-                        label: '+',
-                        title: 'Aproximar',
-                        action: () => zoomCenter(1 / 1.5),
-                    },
-                    {
-                        label: '−',
-                        title: 'Afastar',
-                        action: () => zoomCenter(1.5),
-                    },
-                    {
-                        label: '⟲',
-                        title: restrictToState
-                            ? 'Ver o estado inteiro'
-                            : 'Ver o Brasil inteiro',
-                        action: () => {
-                            if (fullView) {
-                                live.current = fullView;
-                                setViewBox(fullView);
-                            }
-                        },
-                    },
-                ].map((button) => (
-                    <button
-                        key={button.title}
-                        type="button"
-                        title={button.title}
-                        aria-label={button.title}
-                        onClick={button.action}
-                        className="size-9 text-lg leading-none text-ink hover:bg-subtle"
-                    >
-                        {button.label}
-                    </button>
-                ))}
-            </div>
-
-            {hover && hoveredName && (
+        <div>
+            {toggle}
+            <div className="relative">
                 <div
-                    className="pointer-events-none absolute z-10 w-56 rounded-lg border border-line bg-surface p-3 text-sm shadow-lg"
-                    style={{
-                        left: Math.min(hover.x + 14, width - TOOLTIP_WIDTH - 6),
-                        top: hover.y + 14,
-                    }}
+                    ref={frameRef}
+                    tabIndex={0}
+                    role="group"
+                    aria-label="Mapa interativo"
+                    aria-describedby={hintId}
+                    onKeyDown={onKeyDown}
+                    className="relative aspect-square w-full cursor-grab touch-none overflow-hidden rounded-xl select-none active:cursor-grabbing"
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    onPointerLeave={() => setHover(null)}
                 >
-                    <p className="font-semibold text-ink">
-                        {hoveredName[0]} – {hoveredName[1]}
-                    </p>
-                    {hoveredLeader && hovered ? (
-                        <>
-                            <p className="mt-1 flex items-center gap-1.5">
-                                <span
-                                    className="size-2.5 rounded-full"
-                                    style={{
-                                        backgroundColor: hoveredLeader.color,
-                                    }}
-                                />
-                                <span className="font-medium">
-                                    {hoveredLeader.name}
-                                </span>
-                                <span className="ml-auto tabular-nums">
-                                    {formatPercent(hovered[1])}
-                                </span>
-                            </p>
-                            <p className="mt-1 text-muted">
-                                {formatPercent(hovered[2])} das seções apuradas
-                            </p>
-                        </>
-                    ) : (
-                        <p className="mt-1 text-muted">
-                            Sem votos apurados ainda
-                        </p>
-                    )}
-                    <p className="mt-1 text-muted">Clique para detalhes</p>
+                    <svg
+                        ref={svgRef}
+                        viewBox={`${drawnBox.x} ${drawnBox.y} ${drawnBox.w} ${drawnBox.h}`}
+                        // 200% of the frame, centered on it (MARGIN); transforms
+                        // are relative to the frame's corner.
+                        className="absolute -top-1/2 -left-1/2 block size-[200%] origin-[25%_25%] will-change-transform"
+                        role="img"
+                        aria-label={
+                            restrictToState
+                                ? 'Mapa do estado com o candidato mais votado em cada município'
+                                : 'Mapa do Brasil com o candidato mais votado em cada município'
+                        }
+                    >
+                        <g
+                            className="fill-track stroke-surface/60"
+                            strokeWidth={0.3 * unit}
+                        >
+                            <MunicipalityPaths
+                                geometry={geometry}
+                                results={results}
+                                candidates={candidates}
+                                selectedState={selectedState}
+                                restrictToState={restrictToState}
+                            />
+                        </g>
+                        {hoveredShape && (
+                            <path
+                                d={hoveredShape}
+                                fill="none"
+                                className="pointer-events-none stroke-ink"
+                                strokeWidth={1.5 * unit}
+                            />
+                        )}
+                        <g className="pointer-events-none" fill="none">
+                            {Object.entries(geometry.states)
+                                .filter(
+                                    ([code]) =>
+                                        !restrictToState ||
+                                        code === selectedState,
+                                )
+                                .map(([code, state]) => (
+                                    <path
+                                        key={code}
+                                        d={state.d}
+                                        className={
+                                            selectedState === code
+                                                ? 'stroke-ink'
+                                                : 'stroke-muted'
+                                        }
+                                        strokeWidth={
+                                            (selectedState === code ? 2 : 0.8) *
+                                            unit
+                                        }
+                                    />
+                                ))}
+                        </g>
+                    </svg>
                 </div>
-            )}
+
+                <div className="absolute top-3 right-3 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow-sm">
+                    {[
+                        {
+                            label: '+',
+                            title: 'Aproximar',
+                            action: () => zoomCenter(1 / 1.5),
+                        },
+                        {
+                            label: '−',
+                            title: 'Afastar',
+                            action: () => zoomCenter(1.5),
+                        },
+                        {
+                            label: '⟲',
+                            title: restrictToState
+                                ? 'Ver o estado inteiro'
+                                : 'Ver o Brasil inteiro',
+                            action: () => fullView && show(fullView),
+                        },
+                    ].map((button) => (
+                        <button
+                            key={button.title}
+                            type="button"
+                            title={button.title}
+                            aria-label={button.title}
+                            onClick={button.action}
+                            className="size-11 text-xl leading-none text-ink hover:bg-subtle"
+                        >
+                            {button.label}
+                        </button>
+                    ))}
+                </div>
+
+                {hover && hoveredName && (
+                    <div
+                        className="pointer-events-none absolute z-10 w-56 rounded-lg border border-line bg-surface p-3 text-sm shadow-lg"
+                        style={{
+                            left: Math.min(
+                                hover.x + 14,
+                                width - TOOLTIP_WIDTH - 6,
+                            ),
+                            top: hover.y + 14,
+                        }}
+                    >
+                        <p className="font-semibold text-ink">
+                            {hoveredName[0]} – {hoveredName[1]}
+                        </p>
+                        {hoveredLeader && hovered ? (
+                            <>
+                                <p className="mt-1 flex items-center gap-1.5">
+                                    <span
+                                        className="size-2.5 rounded-full"
+                                        style={{
+                                            backgroundColor:
+                                                hoveredLeader.color,
+                                        }}
+                                    />
+                                    <span className="font-medium">
+                                        {hoveredLeader.name}
+                                    </span>
+                                    <span className="ml-auto tabular-nums">
+                                        {formatPercent(hovered[1])}
+                                    </span>
+                                </p>
+                                <p className="mt-1 text-muted">
+                                    {formatPercent(hovered[2])} das urnas
+                                    apuradas
+                                </p>
+                            </>
+                        ) : (
+                            <p className="mt-1 text-muted">
+                                Sem votos apurados ainda
+                            </p>
+                        )}
+                        <p className="mt-1 text-muted">
+                            Clique para ver o resultado
+                        </p>
+                    </div>
+                )}
+            </div>
+            <p id={hintId} className="mt-2 text-sm text-muted">
+                No teclado, use as setas para mover o mapa, + e − para aproximar
+                e 0 para ver tudo. Para escolher um município, use a Lista.
+            </p>
         </div>
     );
 }

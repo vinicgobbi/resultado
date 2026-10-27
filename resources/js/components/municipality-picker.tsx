@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import type { InertiaLinkProps } from '@inertiajs/react';
 import { formatPercent } from '@/lib/format';
+import { normalized } from '@/lib/utils';
 import type { MunicipalityOption } from '@/types';
 
 type Props = {
@@ -9,16 +10,6 @@ type Props = {
     /** Page of a municipality. */
     href: (code: string) => InertiaLinkProps['href'];
 };
-
-/**
- * Lowercase without accents, so "sao" finds "SÃO PAULO".
- */
-function normalized(value: string): string {
-    return value
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
-        .toLowerCase();
-}
 
 /**
  * Searchable list of the municipalities of a state.
