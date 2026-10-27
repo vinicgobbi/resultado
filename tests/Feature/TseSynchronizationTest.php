@@ -246,9 +246,8 @@ test('a candidate photo is downloaded from the TSE once, on the first request', 
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request->url() === "https://resultados.tse.jus.br/oficial/ele2026/6259/fotos/sp/{$candidate->tse_sequence}.jpeg");
 
-    // Once stored, pages link to the file served by the web server.
-    expect($candidate->toPublicArray()['photo_url'])
-        ->toBe(Storage::disk(Candidate::PHOTO_DISK)->url(Candidate::photoPath($candidate->tse_sequence)));
+    // Without the public/storage link, the route keeps serving the photo.
+    expect($candidate->toPublicArray()['photo_url'])->toBe(route('candidates.photo', $candidate));
 });
 
 test('presidential photos come from the first round of the federal election', function () {

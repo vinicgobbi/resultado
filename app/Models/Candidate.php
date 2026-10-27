@@ -113,14 +113,16 @@ class Candidate extends Model
     }
 
     /**
-     * The static file once the photo was downloaded; until then, the route
-     * that downloads it from the TSE.
+     * The static file once the photo was downloaded and the public/storage
+     * link exists ("php artisan storage:link"); otherwise the route that
+     * downloads and serves it.
      */
     public function photoUrl(): string
     {
-        $disk = Storage::disk(self::PHOTO_DISK);
         $path = self::photoPath($this->tse_sequence);
 
-        return $disk->exists($path) ? $disk->url($path) : route('candidates.photo', $this);
+        return is_file(public_path("storage/fotos/{$path}"))
+            ? Storage::disk(self::PHOTO_DISK)->url($path)
+            : route('candidates.photo', $this);
     }
 }

@@ -47,12 +47,12 @@ return [
             'report' => false,
         ],
 
-        // Candidate photos live under public/ so the web server serves the
-        // downloaded ones directly; only missing ones reach the application.
+        // Candidate photos, kept in the storage shared by every release and
+        // served by the web server through the public/storage link.
         'photos' => [
             'driver' => 'local',
-            'root' => public_path('fotos'),
-            'url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/fotos',
+            'root' => storage_path('app/public/fotos'),
+            'url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/storage/fotos',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
