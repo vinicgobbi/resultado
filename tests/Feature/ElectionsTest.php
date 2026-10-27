@@ -244,3 +244,26 @@ test('every office fits in the office columns', function () {
     // MySQL rejects longer values; SQLite, used by the tests, does not.
     expect(max(array_map(fn (Office $office): int => strlen($office->value), Office::cases())))->toBeLessThanOrEqual(30);
 });
+
+test('candidates of results that did not change are not written again', function () {
+    Http::preventStrayRequests();
+    $this->travelTo('2026-03-01 10:00:00');
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    // Listed municipalities are downloaded on every run.
+    Election::factory()->municipal2024(2)->in(['sp'], ['71072' => 'sp'])->create();
+    Http::fake([
+        'resultados.tse.jus.br/oficial/ele2024/620/dados/sp/sp71072-c0011-e000620-u.json' => Http::response(
+            [...municipalResult(['250000000001' => ['15', 600]]), 'and' => 'p'],
+        ),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:importar')->assertSuccessful();
+    $written = Candidate::query()->where('tse_sequence', '250000000001')->value('updated_at');
+
+    $this->travel(1)->hours();
+    $this->artisan('tse:importar')->assertSuccessful();
+
+    Http::assertSentCount(2);
+    expect(Candidate::query()->where('tse_sequence', '250000000001')->value('updated_at'))->toEqual($written);
+});

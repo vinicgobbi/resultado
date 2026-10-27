@@ -119,8 +119,11 @@ class ResultSynchronizer
                     || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
 
                 $this->track($country);
-                $this->storeCandidates(Office::President, null, null, $country);
-                $this->storeResults($election, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]);
+
+                if ($this->changedPayloads($election, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]) !== []) {
+                    $this->storeCandidates(Office::President, null, null, $country);
+                    $this->storeResults($election, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]);
+                }
             }
         }
 
@@ -269,15 +272,19 @@ class ResultSynchronizer
             ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
             ->all();
 
-        foreach ($payloads as $uf => $payload) {
+        foreach ($payloads as $payload) {
             $this->track($payload);
+        }
 
-            if (! $office->isNationwide()) {
+        $changed = $this->changedPayloads($election, $office, Result::SCOPE_STATE, $payloads);
+
+        if (! $office->isNationwide()) {
+            foreach ($changed as $uf => $payload) {
                 $this->storeCandidates($office, State::from($uf), null, $payload);
             }
         }
 
-        $this->storeResults($election, $office, Result::SCOPE_STATE, $payloads);
+        $this->storeResults($election, $office, Result::SCOPE_STATE, $changed);
 
         return count($payloads);
     }
@@ -366,15 +373,19 @@ class ResultSynchronizer
                     ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
                     ->all();
 
-                foreach ($payloads as $tseCode => $payload) {
+                foreach ($payloads as $payload) {
                     $this->track($payload);
+                }
 
-                    if ($office->isMunicipal()) {
+                $changed = $this->changedPayloads($election, $office, Result::SCOPE_MUNICIPALITY, $payloads);
+
+                if ($office->isMunicipal()) {
+                    foreach ($changed as $tseCode => $payload) {
                         $this->storeCandidates($office, $chunk[$tseCode], (string) $tseCode, $payload);
                     }
                 }
 
-                $this->storeResults($election, $office, Result::SCOPE_MUNICIPALITY, $payloads);
+                $this->storeResults($election, $office, Result::SCOPE_MUNICIPALITY, $changed);
 
                 // Councillors of every municipality add up to hundreds of
                 // thousands of candidates: keep only the ones of this batch.
@@ -466,6 +477,32 @@ class ResultSynchronizer
     }
 
     /**
+     * Downloaded results that replace the stored ones: only these, and their
+     * candidates, are written.
+     *
+     * @param  array<string, ResultPayload>  $payloads  keyed by scope code
+     * @return array<string, ResultPayload>
+     */
+    private function changedPayloads(Election $election, Office $office, string $scope, array $payloads): array
+    {
+        if ($payloads === []) {
+            return [];
+        }
+
+        $stored = Result::query()
+            ->forElection($election->tse_code, $office, $scope)
+            ->whereIn('scope_code', array_map(strval(...), array_keys($payloads)))
+            ->get(['scope_code', 'tse_updated_at', 'is_final'])
+            ->keyBy('scope_code');
+
+        return array_filter(
+            $payloads,
+            fn (ResultPayload $payload, int|string $scopeCode): bool => $this->replaces($payload, $stored->get($scopeCode)),
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
+    /**
      * Whether a downloaded result replaces the stored one. What is stored is
      * never lost to a worse file: a final result is not replaced by a partial
      * one, nor a result by an older one (a full sync rewrites equal ones).
@@ -546,24 +583,10 @@ class ResultSynchronizer
     }
 
     /**
-     * @param  array<string, ResultPayload>  $payloads  keyed by scope code
+     * @param  array<string, ResultPayload>  $payloads  changed results, keyed by scope code
      */
     private function storeResults(Election $election, Office $office, string $scope, array $payloads): void
     {
-        if ($payloads !== []) {
-            $stored = Result::query()
-                ->forElection($election->tse_code, $office, $scope)
-                ->whereIn('scope_code', array_map(strval(...), array_keys($payloads)))
-                ->get(['scope_code', 'tse_updated_at', 'is_final'])
-                ->keyBy('scope_code');
-
-            $payloads = array_filter(
-                $payloads,
-                fn (ResultPayload $payload, int|string $scopeCode): bool => $this->replaces($payload, $stored->get($scopeCode)),
-                ARRAY_FILTER_USE_BOTH,
-            );
-        }
-
         if ($payloads === []) {
             return;
         }
