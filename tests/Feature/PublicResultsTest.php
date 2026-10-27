@@ -13,7 +13,12 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
-beforeEach(fn () => elections2026('2026-10-26 12:00:00'));
+beforeEach(function () {
+    elections2026('2026-10-26 12:00:00');
+
+    Storage::fake();
+    Storage::put(MapGeometryBuilder::PATH, json_encode(['width' => 1000, 'height' => 1000, 'municipalities' => [], 'states' => []]));
+});
 
 /**
  * @param  array<int, int>  $votes
@@ -86,9 +91,6 @@ test('changing a candidate color invalidates the cached results', function () {
 });
 
 test('the map geometry is not sent again to a browser that has it', function () {
-    Storage::fake();
-    Storage::put(MapGeometryBuilder::PATH, json_encode(['width' => 1000, 'height' => 1000, 'municipalities' => [], 'states' => []]));
-
     $etag = $this->get(route('map.geometry'))
         ->assertOk()
         ->assertJsonPath('width', 1000)
