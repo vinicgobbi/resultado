@@ -108,6 +108,7 @@ class ResultsController extends Controller
             'candidates' => fn (): array => $this->presenter->placeCandidates($code, $office, $state, $municipality),
             'summary' => fn (): ?array => $this->presenter->summary($code, $office, $state, $municipality),
             'states' => fn (): array => $office->isNationwide() ? $this->presenter->states($code, $office) : [],
+            'celebrateWinners' => $election->celebratesWinners(),
             'mapAvailable' => $hasMap,
             'map' => Inertia::defer(fn (): array => $hasMap && ($office->isNationwide() || $state !== null)
                 ? $this->presenter->map($code, $office, $state)

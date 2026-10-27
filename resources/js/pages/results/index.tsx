@@ -49,6 +49,8 @@ type Props = {
     candidates: Candidate[];
     summary: ResultSummary | null;
     states: StateResult[];
+    /** Latest election, until a week after its day. */
+    celebrateWinners: boolean;
     mapAvailable: boolean;
     map?: MapResults;
 };
@@ -100,6 +102,7 @@ export default function ResultsIndex({
     candidates,
     summary,
     states,
+    celebrateWinners,
     mapAvailable,
     map,
 }: Props) {
@@ -175,17 +178,23 @@ export default function ResultsIndex({
     });
     const winnerIds = winners.map((winner) => winner.candidate_id).join();
     // Opens on load when the place has winners, and when one appears while
-    // the page is open (polling).
-    const [celebrating, setCelebrating] = useState(winners.length > 0);
+    // the page is open (polling), only while the winners are celebrated.
+    const [celebrating, setCelebrating] = useState(
+        celebrateWinners && winners.length > 0,
+    );
     const previousWinners = useRef(winnerIds);
 
     useEffect(() => {
-        if (winnerIds !== '' && winnerIds !== previousWinners.current) {
+        if (
+            celebrateWinners &&
+            winnerIds !== '' &&
+            winnerIds !== previousWinners.current
+        ) {
             setCelebrating(true);
         }
 
         previousWinners.current = winnerIds;
-    }, [winnerIds]);
+    }, [winnerIds, celebrateWinners]);
 
     /**
      * Page of a view of an election, keeping the current office and place.
@@ -464,7 +473,11 @@ export default function ResultsIndex({
                                         candidates={candidatesById}
                                         winners={winners}
                                         proportional={proportional}
-                                        onCelebrate={() => setCelebrating(true)}
+                                        onCelebrate={
+                                            celebrateWinners
+                                                ? () => setCelebrating(true)
+                                                : undefined
+                                        }
                                     />
                                 </div>
 

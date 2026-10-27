@@ -194,6 +194,19 @@ test('the candidate elected by the TSE is the winner', function () {
     $this->getJson(route('results.summary'))->assertJsonPath('winner', ['name' => $leader->ballot_name, 'status' => 'elected']);
 });
 
+test('winners are celebrated only in the latest election, until a week after its day', function () {
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->where('election.code', 6258)
+        ->where('celebrateWinners', true));
+    $this->get(route('elections.show', 6257))->assertInertia(fn (Assert $page) => $page->where('celebrateWinners', false));
+
+    $this->travelTo('2026-11-01 23:59:00');
+    $this->get(route('elections.show', 6258))->assertInertia(fn (Assert $page) => $page->where('celebrateWinners', true));
+
+    $this->travelTo('2026-11-02 00:00:00');
+    $this->get(route('elections.show', 6258))->assertInertia(fn (Assert $page) => $page->where('celebrateWinners', false));
+});
+
 test('the voters left fall back to turnout and abstentions', function () {
     [$leader, $other] = Candidate::factory()->count(2)->create();
     // Synced before electorate_counted existed: 1100 voters counted (1000 + 100).

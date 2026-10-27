@@ -10,10 +10,18 @@ type Props = {
     winners: Winner[];
     /** Deputies: hundreds of candidates, seats split by party. */
     proportional?: boolean;
+    /** Shows the celebration again; without it the badge is only a label. */
     onCelebrate?: () => void;
 };
 
 const PAGE_SIZE = 30;
+
+const badgeClass =
+    'shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase';
+
+function winnerLabel(winner: Winner): string {
+    return winner.status === 'elected' ? 'Eleito' : 'Matematicamente eleito';
+}
 
 export default function CandidateResults({
     results,
@@ -158,19 +166,24 @@ export default function CandidateResults({
                                         <span className="truncate">
                                             {candidate.name}
                                         </span>
-                                        {winner && (
-                                            <button
-                                                type="button"
-                                                onClick={onCelebrate}
-                                                title="Comemorar de novo"
-                                                className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase hover:bg-emerald-700"
-                                            >
-                                                🎉{' '}
-                                                {winner.status === 'elected'
-                                                    ? 'Eleito'
-                                                    : 'Matematicamente eleito'}
-                                            </button>
-                                        )}
+                                        {winner &&
+                                            (onCelebrate ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={onCelebrate}
+                                                    title="Comemorar de novo"
+                                                    className={cn(
+                                                        badgeClass,
+                                                        'hover:bg-emerald-700',
+                                                    )}
+                                                >
+                                                    🎉 {winnerLabel(winner)}
+                                                </button>
+                                            ) : (
+                                                <span className={badgeClass}>
+                                                    {winnerLabel(winner)}
+                                                </span>
+                                            ))}
                                     </p>
                                     <p className="truncate text-xs text-zinc-500">
                                         {candidate.party} · {candidate.number}

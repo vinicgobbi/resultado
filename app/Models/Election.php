@@ -53,6 +53,11 @@ class Election extends Model
     public const int LIVE_DAYS = 2;
 
     /**
+     * Days after the election day the winners are celebrated.
+     */
+    public const int CELEBRATION_DAYS = 7;
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, mixed>
@@ -144,6 +149,20 @@ class Election extends Model
     public function countIsOver(): bool
     {
         return $this->date->lt(today()->subDays(self::LIVE_DAYS));
+    }
+
+    /**
+     * Whether the winners are celebrated with an animation: only in the
+     * latest election day, until a week after it.
+     */
+    public function celebratesWinners(): bool
+    {
+        $isLatest = ! static::query()
+            ->whereDate('date', '>', $this->date)
+            ->whereDate('date', '<=', today())
+            ->exists();
+
+        return $isLatest && today()->lte($this->date->copy()->addDays(self::CELEBRATION_DAYS));
     }
 
     /**
