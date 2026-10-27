@@ -1,4 +1,5 @@
 import { Form, Head } from '@inertiajs/react';
+import Logo from '@/components/logo';
 import { store } from '@/routes/login';
 
 export default function Login() {
@@ -7,11 +8,7 @@ export default function Login() {
             <Head title="Entrar" />
             <div className="flex min-h-screen items-center justify-center bg-subtle px-4 text-ink">
                 <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 shadow-sm">
-                    <img
-                        src="/app-icons/icon-192.png"
-                        alt=""
-                        className="mb-4 size-10 rounded-lg"
-                    />
+                    <Logo className="mb-4" />
                     <h1 className="mb-1 text-lg font-bold text-ink">
                         Área administrativa
                     </h1>

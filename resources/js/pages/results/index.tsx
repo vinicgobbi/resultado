@@ -1,5 +1,6 @@
 import { Head, Link, router, useHttp, usePoll } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
+import Logo from '@/components/logo';
 import CandidateResults from '@/components/candidate-results';
 import CountProgress from '@/components/count-progress';
 import HowToRead from '@/components/how-to-read';
@@ -307,11 +308,7 @@ export default function ResultsIndex({
                             href={electionsIndex()}
                             className="flex items-center gap-3 rounded-lg"
                         >
-                            <img
-                                src="/app-icons/icon-192.png"
-                                alt=""
-                                className="size-10 rounded-lg"
-                            />
+                            <Logo />
                             <span className="font-bold">
                                 Resultados das Eleições
                             </span>

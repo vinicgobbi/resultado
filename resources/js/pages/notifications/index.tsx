@@ -1,5 +1,6 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
+import Logo from '@/components/logo';
 import SkipLink from '@/components/skip-link';
 import {
     currentSubscription,
@@ -121,11 +122,7 @@ export default function NotificationsIndex() {
                             href={home()}
                             className="flex items-center gap-3 rounded-lg"
                         >
-                            <img
-                                src="/app-icons/icon-192.png"
-                                alt=""
-                                className="size-10 rounded-lg"
-                            />
+                            <Logo />
                             <span className="text-lg font-bold">
                                 Resultados das Eleições
                             </span>

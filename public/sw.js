@@ -1,6 +1,6 @@
 /* Service worker: PWA install, offline-friendly assets and push notifications. */
 
-const STATIC_CACHE = 'eleicoes-static-v2';
+const STATIC_CACHE = 'eleicoes-static-v3';
 const MAP_CACHE = 'eleicoes-mapa-v1';
 
 self.addEventListener('install', () => {
@@ -150,16 +150,17 @@ function showSummary() {
             return self.registration.showNotification(title, {
                 body: body || 'Novos resultados disponíveis.',
                 icon: '/app-icons/icon-192.png',
-                badge: '/app-icons/icon-192.png',
+                badge: '/app-icons/badge-96.png',
                 tag: 'apuracao-brasil',
                 renotify: true,
                 data: { url: '/' },
             });
         })
         .catch(() =>
-            self.registration.showNotification('Eleições 2026', {
+            self.registration.showNotification('Resultados das Eleições', {
                 body: 'O TSE publicou novos resultados.',
                 icon: '/app-icons/icon-192.png',
+                badge: '/app-icons/badge-96.png',
                 tag: 'apuracao-brasil',
                 data: { url: '/' },
             }),
@@ -180,7 +181,7 @@ self.addEventListener('push', (event) => {
                                   {
                                       body: message.body,
                                       icon: '/app-icons/icon-192.png',
-                                      badge: '/app-icons/icon-192.png',
+                                      badge: '/app-icons/badge-96.png',
                                       tag: message.tag,
                                       renotify: true,
                                       data: { url: message.url },

@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import Logo from '@/components/logo';
 import SkipLink from '@/components/skip-link';
 import StatusBadge from '@/components/status-badge';
 import { dayLabel } from '@/lib/election';
@@ -28,11 +29,7 @@ export default function ElectionsIndex({ days }: Props) {
                             href={home()}
                             className="flex items-center gap-3 rounded-lg"
                         >
-                            <img
-                                src="/app-icons/icon-192.png"
-                                alt=""
-                                className="size-10 rounded-lg"
-                            />
+                            <Logo />
                             <span className="text-lg font-bold">
                                 Resultados das Eleições
                             </span>

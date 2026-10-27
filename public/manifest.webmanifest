@@ -1,13 +1,13 @@
 {
-    "name": "Eleições 2026 — Apuração de Presidente",
-    "short_name": "Eleições 2026",
-    "description": "Resultados da eleição presidencial em tempo real, direto do TSE, com mapa por município.",
+    "name": "Resultados das Eleições",
+    "short_name": "Eleições",
+    "description": "Resultados oficiais das eleições do Brasil em tempo real, direto do TSE: presidente, governador, senador, deputados, prefeito e vereador, com mapa por município.",
     "lang": "pt-BR",
     "start_url": "/?source=pwa",
     "scope": "/",
     "display": "standalone",
     "orientation": "portrait",
-    "background_color": "#0b0f14",
+    "background_color": "#1e4fbf",
     "theme_color": "#1e4fbf",
     "icons": [
         {
