@@ -528,3 +528,10 @@ test('an election day is only complete when all of its elections are', function 
 
     $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('days.0.status', 'concluida'));
 });
+
+test('the icons are linked with their version, so browsers load new ones', function () {
+    $this->get(route('elections.index'))
+        ->assertOk()
+        ->assertSee('/favicon.svg?v='.filemtime(public_path('favicon.svg')), escape: false)
+        ->assertSee('/favicon.ico?v='.filemtime(public_path('favicon.ico')), escape: false);
+});
