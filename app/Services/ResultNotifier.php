@@ -70,6 +70,30 @@ class ResultNotifier
     }
 
     /**
+     * Tell a browser it now follows a result and what it will receive.
+     */
+    public function confirmFollow(PushFollow $follow): int
+    {
+        $place = new ResultPlace($follow->office, $follow->scope_code);
+        $election = $place->latestElection();
+        $kinds = array_keys(array_filter([
+            'as atualizações do TSE (no máximo a cada 10 minutos)' => $follow->notify_updates,
+            'quando estiver matematicamente definido' => $follow->notify_decided,
+            'o resultado final' => $follow->notify_final,
+        ]));
+        $last = array_pop($kinds);
+
+        $follow->subscription->messages()->create([
+            'title' => "🔔 Você está seguindo {$place->label()}",
+            'body' => 'Vai receber '.($kinds === [] ? $last : implode(', ', $kinds)." e {$last}").'.',
+            'url' => $election === null ? route('home', absolute: false) : $place->url($election),
+            'tag' => "{$follow->office->value}-{$follow->scope_code}-seguindo",
+        ]);
+
+        return $this->webPush->send(collect([$follow->subscription]));
+    }
+
+    /**
      * Follows of the result that want this kind of notification; new results
      * at most once every few minutes.
      *

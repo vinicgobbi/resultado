@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\FollowResultRequest;
+use App\Jobs\SendFollowConfirmation;
 use App\Models\PushFollow;
 use App\Models\PushMessage;
 use App\Models\PushSubscription;
@@ -69,6 +70,10 @@ class PushFollowController extends Controller
         }
 
         $follow = $subscription->follows()->updateOrCreate($key, $categories);
+
+        if ($follow->wasRecentlyCreated) {
+            SendFollowConfirmation::dispatch($follow);
+        }
 
         return response()->json($this->present($follow));
     }

@@ -3,7 +3,10 @@
 use App\Enums\Office;
 use App\Models\Municipality;
 use App\Models\PushFollow;
+use App\Models\PushMessage;
 use App\Models\PushSubscription;
+use App\Services\WebPush;
+use Illuminate\Support\Facades\Http;
 
 const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/abc';
 
@@ -31,6 +34,31 @@ test('a browser follows a result and lists what it follows', function () {
             'notify_decided' => true,
             'notify_final' => true,
         ]]);
+});
+
+test('a browser that starts following a result gets a confirmation', function () {
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    Http::fake([ENDPOINT => Http::response('', 201)]);
+    $follow = fn (array $categories) => $this->putJson(route('notifications.follow'), [
+        'endpoint' => ENDPOINT,
+        'office' => 'governador',
+        'scope_code' => 'sp',
+        ...$categories,
+    ])->assertOk();
+
+    $follow(['notify_updates' => false]);
+
+    expect(PushMessage::query()->sole()->only(['title', 'body', 'url']))->toBe([
+        'title' => '🔔 Você está seguindo Governador · São Paulo',
+        'body' => 'Vai receber quando estiver matematicamente definido e o resultado final.',
+        'url' => '/eleicoes/6259?cargo=governador&uf=sp',
+    ]);
+    Http::assertSentCount(1);
+
+    $follow(['notify_updates' => true]);
+
+    expect(PushMessage::query()->count())->toBe(1);
+    Http::assertSentCount(1);
 });
 
 test('following a result again changes its notifications, and none stops following it', function () {
