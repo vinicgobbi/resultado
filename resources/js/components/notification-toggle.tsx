@@ -14,13 +14,16 @@ export default function NotificationToggle() {
     );
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const supported = isPushSupported() && Boolean(push.publicKey);
+    // Only known in the browser: checked after mounting, so the page
+    // rendered on the server matches the first render.
+    const [supported, setSupported] = useState(false);
 
     useEffect(() => {
-        if (supported) {
+        if (isPushSupported() && push.publicKey) {
+            setSupported(true);
             void currentSubscription().then(setSubscription);
         }
-    }, [supported]);
+    }, [push.publicKey]);
 
     if (!supported) {
         return null;
