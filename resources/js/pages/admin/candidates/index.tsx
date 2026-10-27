@@ -6,10 +6,15 @@ import { index, update } from '@/routes/admin/candidates';
 import type { Candidate, OfficeOption } from '@/types';
 
 type Props = {
+    election: number | null;
+    elections: OfficeOption[];
     office: string;
     offices: OfficeOption[];
     state: string | null;
     states: OfficeOption[];
+    /** TSE code of the municipality, for municipal offices. */
+    municipality: string | null;
+    municipalities: OfficeOption[];
     candidates: (Candidate & {
         custom_color: string | null;
         party_color: string | null;
@@ -17,12 +22,36 @@ type Props = {
 };
 
 export default function CandidatesIndex({
+    election,
+    elections,
     office,
     offices,
     state,
     states,
+    municipality,
+    municipalities,
     candidates,
 }: Props) {
+    /**
+     * Page of a filter, keeping the others when they still apply.
+     */
+    function filterHref(changes: {
+        eleicao?: number;
+        cargo?: string;
+        uf?: string;
+        municipio?: string;
+    }) {
+        return index({
+            query: {
+                ...(election && { eleicao: election }),
+                cargo: office,
+                ...(state && { uf: state }),
+                ...(municipality && { municipio: municipality }),
+                ...changes,
+            },
+        });
+    }
+
     return (
         <AdminLayout title="Cores dos candidatos">
             <Head title="Candidatos" />
@@ -36,14 +65,33 @@ export default function CandidatesIndex({
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
+                {elections.length > 1 && (
+                    <select
+                        value={election ?? ''}
+                        onChange={(event) =>
+                            router.visit(
+                                index({
+                                    query: { eleicao: event.target.value },
+                                }),
+                                { preserveScroll: true },
+                            )
+                        }
+                        aria-label="Eleição"
+                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                        {elections.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
                 {offices.map((option) => (
                     <Link
                         key={option.value}
-                        href={index({
-                            query: {
-                                cargo: option.value,
-                                ...(state && { uf: state }),
-                            },
+                        href={filterHref({
+                            cargo: option.value,
+                            municipio: undefined,
                         })}
                         preserveScroll
                         className={cn(
@@ -61,11 +109,9 @@ export default function CandidatesIndex({
                         value={state ?? ''}
                         onChange={(event) =>
                             router.visit(
-                                index({
-                                    query: {
-                                        cargo: office,
-                                        uf: event.target.value,
-                                    },
+                                filterHref({
+                                    uf: event.target.value,
+                                    municipio: undefined,
                                 }),
                                 { preserveScroll: true },
                             )
@@ -74,6 +120,25 @@ export default function CandidatesIndex({
                         className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                     >
                         {states.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
+                {municipalities.length > 0 && (
+                    <select
+                        value={municipality ?? ''}
+                        onChange={(event) =>
+                            router.visit(
+                                filterHref({ municipio: event.target.value }),
+                                { preserveScroll: true },
+                            )
+                        }
+                        aria-label="Município"
+                        className="max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                        {municipalities.map((option) => (
                             <option key={option.value} value={option.value}>
                                 {option.label}
                             </option>

@@ -1,7 +1,7 @@
 <?php
 
-test('returns a successful response', function () {
-    $response = $this->get(route('home'));
+test('the home page sends to the archive while no election is registered', function () {
+    $this->get(route('home'))->assertRedirect(route('elections.index'));
 
-    $response->assertOk();
+    $this->get(route('elections.index'))->assertOk();
 });

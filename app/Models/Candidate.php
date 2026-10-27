@@ -8,14 +8,17 @@ use Database\Factories\CandidateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
  * @property string $tse_sequence
+ * @property int|null $election_code
  * @property Office $office
  * @property State|null $state
+ * @property string|null $municipality
  * @property int $number
  * @property string $ballot_name
  * @property string $full_name
@@ -24,7 +27,7 @@ use Illuminate\Support\Facades\Storage;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['tse_sequence', 'office', 'state', 'number', 'ballot_name', 'full_name', 'party', 'color'])]
+#[Fillable(['tse_sequence', 'election_code', 'office', 'state', 'municipality', 'number', 'ballot_name', 'full_name', 'party', 'color'])]
 class Candidate extends Model
 {
     /** @use HasFactory<CandidateFactory> */
@@ -54,14 +57,24 @@ class Candidate extends Model
     }
 
     /**
+     * The first round election the candidate ran in.
+     *
+     * @return BelongsTo<Election, $this>
+     */
+    public function election(): BelongsTo
+    {
+        return $this->belongsTo(Election::class, 'election_code', 'tse_code');
+    }
+
+    /**
      * TSE election and directory that hold the official photo: every
      * candidate runs in the first round, so its files always have it.
      *
-     * @return array{0: int|null, 1: string}
+     * @return array{0: Election|null, 1: string}
      */
     public function photoSource(): array
     {
-        return [$this->office->electionCode(1), $this->state->value ?? 'br'];
+        return [$this->election, $this->state->value ?? 'br'];
     }
 
     /**

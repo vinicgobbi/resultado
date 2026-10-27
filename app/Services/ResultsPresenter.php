@@ -47,14 +47,6 @@ class ResultsPresenter
     public function __construct(private readonly CandidateColors $colors) {}
 
     /**
-     * @return list<int>
-     */
-    public static function rounds(): array
-    {
-        return array_map(intval(...), array_keys(config('eleicoes.turnos')));
-    }
-
-    /**
      * Candidates that appear in a result.
      *
      * @param  array{results: list<CandidateVotes>}|null  $result
@@ -94,18 +86,33 @@ class ResultsPresenter
      *
      * @return list<array{id: int, number: int, name: string, full_name: string, party: string, color: string, photo_url: string}>
      */
-    public function placeCandidates(int $electionCode, Office $office, ?State $state = null): array
+    public function placeCandidates(int $electionCode, Office $office, ?State $state = null, ?Municipality $municipality = null): array
     {
-        $scopeCode = $office->isNationwide() ? 'br' : $state?->value;
+        $place = $this->place($office, $state, $municipality);
 
-        if ($scopeCode === null) {
+        if ($place === null) {
             return [];
         }
 
-        return $this->remember($electionCode, "{$office->value}.candidatos.{$scopeCode}", fn (): array => $this->publicCandidates(
-            $this->summary($electionCode, $office, $state),
+        return $this->remember($electionCode, "{$office->value}.candidatos.{$place[1]}", fn (): array => $this->publicCandidates(
+            $this->summary($electionCode, $office, $state, $municipality),
             $office,
         ));
+    }
+
+    /**
+     * Scope and code of the place where the office is elected: the country,
+     * the state or the municipality; null until it is chosen.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function place(Office $office, ?State $state, ?Municipality $municipality): ?array
+    {
+        return match (true) {
+            $office->isNationwide() => [Result::SCOPE_COUNTRY, 'br'],
+            $office->isMunicipal() => $municipality === null ? null : [Result::SCOPE_MUNICIPALITY, $municipality->tse_code],
+            default => $state === null ? null : [Result::SCOPE_STATE, $state->value],
+        };
     }
 
     /**
@@ -122,6 +129,13 @@ class ResultsPresenter
 
         try {
             foreach ($offices as $office) {
+                // Thousands of municipalities: computed when visited.
+                if ($office->isMunicipal()) {
+                    $this->places($electionCode, $office);
+
+                    continue;
+                }
+
                 $states = $office->isNationwide()
                     ? [null]
                     : array_map(fn (array $place): State => State::from(strtolower($place['code'])), $this->places($electionCode, $office));
@@ -133,7 +147,7 @@ class ResultsPresenter
                 foreach ($states as $state) {
                     $this->placeCandidates($electionCode, $office, $state);
 
-                    if ($office->hasMunicipalityResults()) {
+                    if ($office->hasMap()) {
                         $this->map($electionCode, $office, $state);
                     }
                 }
@@ -147,18 +161,20 @@ class ResultsPresenter
 
     /**
      * Result of the place where the office is elected: the whole country for
-     * president, the state for every other office.
+     * president, the municipality for mayors and councillors, the state for
+     * every other office.
      *
      * @return Summary|null
      */
-    public function summary(int $electionCode, Office $office, ?State $state = null): ?array
+    public function summary(int $electionCode, Office $office, ?State $state = null, ?Municipality $municipality = null): ?array
     {
-        $scope = $office->isNationwide() ? Result::SCOPE_COUNTRY : Result::SCOPE_STATE;
-        $scopeCode = $office->isNationwide() ? 'br' : $state?->value;
+        $place = $this->place($office, $state, $municipality);
 
-        if ($scopeCode === null) {
+        if ($place === null) {
             return null;
         }
+
+        [$scope, $scopeCode] = $place;
 
         return $this->remember($electionCode, "{$office->value}.resumo.{$scopeCode}", function () use ($electionCode, $office, $scope, $scopeCode): ?array {
             $result = Result::query()->forElection($electionCode, $office, $scope)->where('scope_code', $scopeCode)->first();
@@ -192,26 +208,63 @@ class ResultsPresenter
 
     /**
      * States with results of the office, without the votes (deputy results
-     * list every candidate of the state).
+     * list every candidate of the state). For municipal offices, the
+     * progress of a state is the average of its municipalities.
      *
      * @return list<Place>
      */
     public function places(int $electionCode, Office $office): array
     {
-        return $this->remember($electionCode, "{$office->value}.locais", fn (): array => array_values(Result::query()
-            ->forElection($electionCode, $office, Result::SCOPE_STATE)
-            ->get(['scope_code', 'counted_percent', 'is_final'])
-            ->map(function (Result $result): array {
-                $state = State::from($result->scope_code);
+        return $this->remember($electionCode, "{$office->value}.locais", function () use ($electionCode, $office): array {
+            $rows = $office->isMunicipal()
+                ? Result::query()
+                    ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
+                    ->join('municipalities', 'municipalities.tse_code', '=', 'results.scope_code')
+                    ->groupBy('municipalities.state')
+                    ->selectRaw('municipalities.state as scope_code, avg(results.counted_percent) as counted_percent, min(results.is_final) as is_final')
+                    ->toBase()
+                    ->get()
+                : Result::query()
+                    ->forElection($electionCode, $office, Result::SCOPE_STATE)
+                    ->toBase()
+                    ->get(['scope_code', 'counted_percent', 'is_final']);
 
-                return [
-                    'code' => $state->abbreviation(),
-                    'name' => $state->label(),
-                    'counted_percent' => round($result->counted_percent, 2),
-                    'is_final' => $result->is_final,
-                ];
-            })
-            ->sortBy('name')
+            return array_values($rows
+                ->map(function (object $row): array {
+                    $state = State::from((string) $row->scope_code);
+
+                    return [
+                        'code' => $state->abbreviation(),
+                        'name' => $state->label(),
+                        'counted_percent' => round((float) $row->counted_percent, 2),
+                        'is_final' => (bool) $row->is_final,
+                    ];
+                })
+                ->sortBy('name')
+                ->all());
+        });
+    }
+
+    /**
+     * Municipalities of a state with results of a municipal office.
+     *
+     * @return list<array{code: string, name: string, counted_percent: float, is_final: bool}>
+     */
+    public function municipalities(int $electionCode, Office $office, State $state): array
+    {
+        return $this->remember($electionCode, "{$office->value}.municipios.{$state->value}", fn (): array => array_values(Result::query()
+            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
+            ->join('municipalities', 'municipalities.tse_code', '=', 'results.scope_code')
+            ->where('municipalities.state', $state->value)
+            ->orderBy('municipalities.name')
+            ->toBase()
+            ->get(['municipalities.tse_code', 'municipalities.name', 'results.counted_percent', 'results.is_final'])
+            ->map(fn (object $row): array => [
+                'code' => (string) $row->tse_code,
+                'name' => (string) $row->name,
+                'counted_percent' => round((float) $row->counted_percent, 2),
+                'is_final' => (bool) $row->is_final,
+            ])
             ->all()));
     }
 
@@ -279,11 +332,11 @@ class ResultsPresenter
      * elected because even if every voter still to be counted voted validly
      * against them, nobody could catch up.
      *
-     * With a majority (president, governor) the leader must keep more than
-     * half of the valid votes (in the runoff: a lead larger than the voters
-     * left). In a plurality (senator, one vote per seat) each of the first
-     * candidates must lead the best one outside the seats by more than the
-     * voters left. Proportional seats depend on the party quotient, so only
+     * With a majority (president, governor, mayor of a large municipality)
+     * the leader must keep more than half of the valid votes (in the runoff:
+     * a lead larger than the voters left). In a plurality (senator, mayor of
+     * a small municipality, one vote per seat) each of the first candidates
+     * must lead the best one outside the seats by more than the voters left. Proportional seats depend on the party quotient, so only
      * the TSE declares them.
      *
      * @return list<Winner>
@@ -306,7 +359,7 @@ class ResultsPresenter
         $votersLeft = max($result->electorate - $counted, 0);
         $status = $result->is_final ? 'elected' : 'mathematical';
 
-        if ($office->requiresMajority()) {
+        if ($office->requiresMajority($result->electorate)) {
             $leaderVotes = reset($votes) ?: 0;
             $validVotes = max($result->valid_votes, array_sum($votes));
 

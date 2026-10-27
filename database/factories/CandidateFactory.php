@@ -23,8 +23,10 @@ class CandidateFactory extends Factory
 
         return [
             'tse_sequence' => (string) fake()->unique()->numerify('2800025#####'),
+            'election_code' => 6257,
             'office' => Office::President,
             'state' => null,
+            'municipality' => null,
             'number' => fake()->unique()->numberBetween(10, 99),
             'ballot_name' => mb_strtoupper($name),
             'full_name' => mb_strtoupper($name),
@@ -34,10 +36,16 @@ class CandidateFactory extends Factory
     }
 
     /**
-     * A candidate for a state office.
+     * A candidate for a state office of 2026, or a municipal office of 2024
+     * (in the given municipality).
      */
-    public function running(Office $office, State $state): static
+    public function running(Office $office, State $state, ?string $municipality = null): static
     {
-        return $this->state(fn (): array => ['office' => $office, 'state' => $state]);
+        return $this->state(fn (): array => [
+            'election_code' => $office->isMunicipal() ? 619 : 6259,
+            'office' => $office,
+            'state' => $state,
+            'municipality' => $municipality,
+        ]);
     }
 }

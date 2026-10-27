@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\Office;
+use App\Models\Election;
 use App\Models\Municipality;
 use App\Services\MapGeometryBuilder;
 use App\Services\ResultsPresenter;
@@ -50,19 +51,19 @@ class MapController extends Controller
     }
 
     /**
-     * Detailed result of one municipality.
+     * Detailed result of one municipality on the map of an office.
      */
-    public function municipality(Request $request, Municipality $municipality, ResultsPresenter $presenter): JsonResponse
+    public function municipality(Request $request, Election $election, Municipality $municipality, ResultsPresenter $presenter): JsonResponse
     {
         $request->validate([
-            'turno' => ['nullable', Rule::in(ResultsPresenter::rounds())],
             'cargo' => ['nullable', Rule::enum(Office::class)],
         ]);
 
-        $office = $request->enum('cargo', Office::class) ?? Office::President;
-        $electionCode = $office->electionCode($request->integer('turno', (int) config('eleicoes.turno_ativo')));
+        $office = $request->enum('cargo', Office::class) ?? $election->offices->first();
 
-        abort_if($electionCode === null || ! $office->hasMunicipalityResults(), 404);
+        abort_if($office === null || ! $election->offices->contains($office) || ! $office->hasMap(), 404);
+
+        $electionCode = $election->tse_code;
 
         $result = $presenter->municipality($electionCode, $office, $municipality);
         $ids = array_column($result['results'] ?? [], 'candidate_id');

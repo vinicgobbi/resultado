@@ -7,7 +7,8 @@ use App\Enums\State;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateCandidateRequest;
 use App\Models\Candidate;
-use App\Services\ResultsPresenter;
+use App\Models\Election;
+use App\Models\Municipality;
 use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,29 +19,60 @@ use Inertia\Response;
 class CandidateController extends Controller
 {
     /**
-     * List the candidates of an office (and state) with their configured colors.
+     * List the candidates of an election, office and place (state, and
+     * municipality for municipal offices) with their configured colors.
      */
     public function index(Request $request): Response
     {
         $request->validate([
+            'eleicao' => ['nullable', 'integer'],
             'cargo' => ['nullable', Rule::enum(Office::class)],
             'uf' => ['nullable', Rule::enum(State::class)],
+            'municipio' => ['nullable', 'string', 'max:5'],
         ]);
 
-        $office = $request->enum('cargo', Office::class) ?? Office::President;
+        // First rounds with candidates: runoffs keep the candidates of theirs.
+        $elections = Election::query()
+            ->where('round', 1)
+            ->whereIn('tse_code', Candidate::query()->select('election_code')->distinct())
+            ->get()
+            ->sort(fn (Election $a, Election $b): int => [$b->date->getTimestamp(), $a->type->order()] <=> [$a->date->getTimestamp(), $b->type->order()])
+            ->values();
+        $election = $elections->firstWhere('tse_code', $request->integer('eleicao')) ?? $elections->first();
+        $offices = $election === null ? collect() : $election->offices;
+        $office = $offices->contains($request->enum('cargo', Office::class)) ? $request->enum('cargo', Office::class) : ($offices->first() ?? Office::President);
         $state = $office->isNationwide() ? null : ($request->enum('uf', State::class) ?? State::SaoPaulo);
 
+        $candidates = Candidate::query()
+            ->where('election_code', $election?->tse_code)
+            ->where('office', $office)
+            ->where('state', $state);
+
+        $municipalities = $office->isMunicipal()
+            ? Municipality::query()
+                ->whereIn('tse_code', (clone $candidates)->select('municipality')->distinct())
+                ->orderBy('name')
+                ->get(['tse_code', 'name'])
+                ->map(fn (Municipality $municipality): array => ['value' => $municipality->tse_code, 'label' => $municipality->name])
+            : collect();
+        $municipality = $office->isMunicipal()
+            ? ($municipalities->firstWhere('value', $request->string('municipio')->toString())['value'] ?? $municipalities->first()['value'] ?? null)
+            : null;
+
         return Inertia::render('admin/candidates/index', [
+            'election' => $election?->tse_code,
+            'elections' => $elections->map(fn (Election $option): array => ['value' => (string) $option->tse_code, 'label' => $option->name]),
             'office' => $office->value,
-            'offices' => collect(Office::cases())
-                ->map(fn (Office $option): array => ['value' => $option->value, 'label' => $option->label()]),
+            'offices' => $offices->map(fn (Office $option): array => ['value' => $option->value, 'label' => $option->label()])->values(),
             'state' => $state?->value,
-            'states' => collect($office->isNationwide() ? [] : $office->states())
-                ->map(fn (State $option): array => ['value' => $option->value, 'label' => $option->label()])
-                ->values(),
-            'candidates' => Candidate::query()
-                ->where('office', $office)
-                ->where('state', $state)
+            'states' => array_map(
+                fn (State $option): array => ['value' => $option->value, 'label' => $option->label()],
+                $office->isNationwide() ? [] : $office->states(),
+            ),
+            'municipality' => $municipality,
+            'municipalities' => $municipalities,
+            'candidates' => $candidates
+                ->when($office->isMunicipal(), fn ($query) => $query->where('municipality', $municipality))
                 ->orderBy('number')
                 ->get()
                 ->map(fn (Candidate $candidate): array => [
@@ -48,8 +80,6 @@ class CandidateController extends Controller
                     'custom_color' => $candidate->color,
                     'party_color' => $candidate->partyColor(),
                 ]),
-            'activeRound' => (int) config('eleicoes.turno_ativo'),
-            'rounds' => ResultsPresenter::rounds(),
         ]);
     }
 
@@ -63,8 +93,10 @@ class CandidateController extends Controller
             'color' => $request->filled('color') ? strtolower($request->string('color')->toString()) : null,
         ]);
 
-        foreach ($candidate->office->rounds() as $round) {
-            ResultSynchronizer::invalidate((int) $candidate->office->electionCode($round));
+        $election = $candidate->election;
+
+        foreach (array_filter([$election?->tse_code, $election?->second_round_code]) as $electionCode) {
+            ResultSynchronizer::invalidate($electionCode);
         }
 
         return back()->with('success', "Cor de {$candidate->ballot_name} atualizada.");

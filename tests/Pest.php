@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Election;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -44,7 +45,16 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * The elections of 2026: federal (6257, runoff 6258) and state (6259, runoff
+ * 6260 where the TSE lists it), on the evening of the runoff by default.
+ */
+function elections2026(string $now = '2026-10-25 20:00:00'): void
 {
-    // ..
+    test()->travelTo($now);
+
+    Election::factory()->federal2026(1)->create();
+    Election::factory()->federal2026(2)->create();
+    Election::factory()->state2026(1)->create();
+    Election::factory()->state2026(2)->in(['df'])->create();
 }

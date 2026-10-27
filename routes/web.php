@@ -4,16 +4,21 @@ use App\Http\Controllers\Admin\CandidateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CandidatePhotoController;
+use App\Http\Controllers\ElectionController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ResultsController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', [ResultsController::class, 'index'])->name('home');
+Route::get('/', [ResultsController::class, 'home'])->name('home');
+Route::get('/eleicoes', [ElectionController::class, 'index'])->name('elections.index');
+Route::get('/eleicoes/{election}', [ResultsController::class, 'show'])->name('elections.show');
+Route::get('/eleicoes/{election}/municipios/{municipality:ibge_code}', [MapController::class, 'municipality'])
+    ->withoutScopedBindings()
+    ->name('municipalities.show');
 Route::get('/resumo.json', [ResultsController::class, 'summary'])->name('results.summary');
 Route::get('/mapa/geometria.json', [MapController::class, 'geometry'])->name('map.geometry');
 Route::get('/candidatos/{candidate}/foto', CandidatePhotoController::class)->name('candidates.photo');
-Route::get('/municipios/{municipality:ibge_code}', [MapController::class, 'municipality'])->name('municipalities.show');
 
 Route::middleware('throttle:30,1')->group(function () {
     Route::post('/push/inscricoes', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');

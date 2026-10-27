@@ -41,16 +41,16 @@ class CandidatePhotos
         $urls = [];
 
         foreach ($candidates as $candidate) {
-            [$electionCode, $directory] = $candidate->photoSource();
+            [$election, $directory] = $candidate->photoSource();
 
-            if ($electionCode === null || $this->isStored($candidate) || $this->isMissing($candidate)) {
+            if ($election === null || $this->isStored($candidate) || $this->isMissing($candidate)) {
                 continue;
             }
 
             // A prefix keeps the keys strings (numeric strings become ints).
             $key = "candidato-{$candidate->id}";
             $pending[$key] = $candidate;
-            $urls[$key] = $this->client->candidatePhotoUrl($electionCode, $directory, $candidate->tse_sequence);
+            $urls[$key] = $this->client->candidatePhotoUrl($election, $directory, $candidate->tse_sequence);
         }
 
         $totals = ['downloaded' => 0, 'missing' => 0, 'failed' => 0];

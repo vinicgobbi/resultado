@@ -5,6 +5,7 @@ namespace App\Services\Tse;
 use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
+use App\Models\Election;
 use App\Models\Municipality;
 use App\Models\Result;
 use App\Services\ResultsPresenter;
@@ -16,11 +17,15 @@ use Illuminate\Support\Facades\DB;
  * Downloads the results of every office of an election from the TSE and
  * stores them locally.
  *
- * Municipality files are only downloaded when the per-state progress file
- * ("-ab.json") reports a newer totalization time than the stored one, so a
- * sync during the count only fetches what actually changed. Once every result
- * of an election is final and was downloaded without failures, the election
- * is complete and the TSE is no longer requested for it.
+ * Each office is downloaded where it is elected and where the election takes
+ * place: the country, the states, or the municipalities (all of them in a
+ * first round, only the listed ones in a municipal runoff). Municipality
+ * files are only downloaded when the per-state progress file ("-ab.json")
+ * reports a newer totalization time than the stored one, so a sync during
+ * the count, or an import resumed after a pause, only fetches what is
+ * missing. Once every result of an election is final and was
+ * downloaded without failures, the election is complete and the TSE is no
+ * longer requested for it.
  *
  * Only results with a newer totalization time are written. When anything
  * changed, the cached pages of the election are computed under a new version
@@ -29,6 +34,11 @@ use Illuminate\Support\Facades\DB;
 class ResultSynchronizer
 {
     /**
+     * Municipality files requested at a time.
+     */
+    private const int MUNICIPALITY_BATCH = 300;
+
+    /**
      * Candidate ids keyed by TSE sequence number.
      *
      * @var array<string, int>
@@ -36,9 +46,14 @@ class ResultSynchronizer
     private array $candidateIds = [];
 
     /**
-     * Whether every result downloaded in the current sync is final.
+     * Whether every result seen in the current sync is final.
      */
     private bool $allFinal = true;
+
+    /**
+     * Number of places with a result seen in the current sync.
+     */
+    private int $seen = 0;
 
     /**
      * Whether the current sync stored any result.
@@ -50,69 +65,79 @@ class ResultSynchronizer
      */
     private bool $full = false;
 
+    /**
+     * Election the candidates are registered with: the first round, whose
+     * files have every candidate (and their photos).
+     */
+    private int $candidateElectionCode = 0;
+
     public function __construct(
         private readonly TseClient $client,
         private readonly ResultsPresenter $presenter,
     ) {}
 
     /**
-     * @param  list<Office>  $offices  offices of the election to synchronize
      * @return array{states: int, municipalities: int, counted_percent: float|null, country_changed: bool, complete: bool}
      *
      * @throws RateLimitedException
      */
-    public function sync(int $electionCode, array $offices, bool $full = false): array
+    public function sync(Election $election, bool $full = false): array
     {
         $failuresBefore = $this->client->failedRequests();
         $this->allFinal = true;
+        $this->seen = 0;
         $this->changed = false;
         $this->full = $full;
+        $this->candidateElectionCode = $election->firstRound()->tse_code ?? $election->tse_code;
+        $offices = array_values($election->offices->all());
 
-        // Every election lists the same municipalities: a full sync refreshes
-        // them once, with the federal election.
-        if (($full && in_array(Office::President, $offices, true)) || Municipality::query()->doesntExist()) {
-            $this->importMunicipalities($electionCode);
+        // Regular elections list every municipality: a full sync refreshes them.
+        if (($full && $election->places === null) || Municipality::query()->doesntExist()) {
+            $this->importMunicipalities($election);
         }
 
         $country = null;
         $countryChanged = false;
 
         if (in_array(Office::President, $offices, true)) {
-            $country = ResultPayload::fromTse($this->client->fetch($this->client->countryResultUrl($electionCode, Office::President)));
+            $json = $this->client->fetchMany(['br' => $this->client->countryResultUrl($election, Office::President)])['br'];
 
-            $previousUpdate = Result::query()
-                ->forElection($electionCode, Office::President, Result::SCOPE_COUNTRY)
-                ->value('tse_updated_at');
+            if ($json !== null) {
+                $country = ResultPayload::fromTse($json);
 
-            $countryChanged = $previousUpdate === null
-                || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
+                $previousUpdate = Result::query()
+                    ->forElection($election->tse_code, Office::President, Result::SCOPE_COUNTRY)
+                    ->value('tse_updated_at');
 
-            $this->allFinal = $country->isFinal;
-            $this->storeCandidates(Office::President, null, $country);
-            $this->storeResults($electionCode, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]);
+                $countryChanged = $previousUpdate === null
+                    || Carbon::parse($previousUpdate)->format('Y-m-d H:i:s') !== $country->updatedAt?->format('Y-m-d H:i:s');
+
+                $this->track($country);
+                $this->storeCandidates(Office::President, null, null, $country);
+                $this->storeResults($election, Office::President, Result::SCOPE_COUNTRY, ['br' => $country]);
+            }
         }
 
         $states = 0;
-        $disputedStates = [];
 
         foreach ($offices as $office) {
-            $disputedStates[$office->value] = $this->disputedStates($electionCode, $office);
-            $states += $this->syncStates($electionCode, $office, $disputedStates[$office->value]);
+            if (! $office->isMunicipal()) {
+                $states += $this->syncStates($election, $office);
+            }
         }
 
-        $municipalities = $this->syncMunicipalities(
-            $electionCode,
-            array_values(array_filter($offices, fn (Office $office): bool => $office->hasMunicipalityResults())),
-            $disputedStates,
-            $full,
-        );
+        $municipalities = $this->syncMunicipalities($election, $offices);
 
         if ($this->changed) {
-            $this->publishVersion($electionCode, $offices);
+            $this->publishVersion($election->tse_code, $offices);
         }
 
-        $complete = $states > 0 && $this->allFinal && $this->client->failedRequests() === $failuresBefore;
-        Cache::forever(self::completeKey($electionCode), $complete);
+        $complete = $this->seen > 0 && $this->allFinal && $this->client->failedRequests() === $failuresBefore;
+
+        $election->forceFill([
+            'last_synced_at' => now(),
+            'completed_at' => $complete ? ($election->completed_at ?? now()) : null,
+        ])->save();
 
         return [
             'states' => $states,
@@ -121,20 +146,6 @@ class ResultSynchronizer
             'country_changed' => $countryChanged,
             'complete' => $complete,
         ];
-    }
-
-    /**
-     * Whether the last sync of the election downloaded every result, all of
-     * them final, so there is nothing left to download.
-     */
-    public static function isComplete(int $electionCode): bool
-    {
-        return (bool) Cache::get(self::completeKey($electionCode), false);
-    }
-
-    private static function completeKey(int $electionCode): string
-    {
-        return "eleicoes.resultados.{$electionCode}.concluida";
     }
 
     /**
@@ -189,9 +200,9 @@ class ResultSynchronizer
         return "eleicoes.resultados.{$electionCode}.versao";
     }
 
-    public function importMunicipalities(int $electionCode): int
+    public function importMunicipalities(Election $election): int
     {
-        $config = $this->client->fetch($this->client->municipalitiesConfigUrl($electionCode));
+        $config = $this->client->fetch($this->client->municipalitiesConfigUrl($election));
         $now = now();
         $rows = [];
 
@@ -226,112 +237,123 @@ class ResultSynchronizer
         return count($rows);
     }
 
-    /**
-     * States where the office is disputed in the election: in a runoff, only
-     * those where nobody was elected in the first round (when it is synced),
-     * so the TSE is not asked every time for files that do not exist.
-     *
-     * @return list<State>
-     */
-    private function disputedStates(int $electionCode, Office $office): array
+    private function track(ResultPayload $payload): void
     {
-        $firstRound = $office->electionCode(1);
-
-        if ($office->isNationwide() || $firstRound === null || $firstRound === $electionCode) {
-            return $office->states();
-        }
-
-        $undecided = Result::query()
-            ->forElection($firstRound, $office, Result::SCOPE_STATE)
-            ->get(['scope_code', 'elected_candidate_ids']);
-
-        if ($undecided->isEmpty()) {
-            return $office->states();
-        }
-
-        $codes = $undecided->filter(fn (Result $result): bool => empty($result->elected_candidate_ids))->pluck('scope_code')->all();
-
-        return array_values(array_filter($office->states(), fn (State $state): bool => in_array($state->value, $codes, true)));
+        $this->seen++;
+        $this->allFinal = $this->allFinal && $payload->isFinal;
     }
 
-    /**
-     * @param  list<State>  $states
-     */
-    private function syncStates(int $electionCode, Office $office, array $states): int
+    private function syncStates(Election $election, Office $office): int
     {
-        $urls = collect($states)
-            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateResultUrl($electionCode, $office, $state)])
+        $urls = collect($election->statesFor($office))
+            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateResultUrl($election, $office, $state)])
             ->all();
 
-        // A missing file means the office has no result there (no runoff in
-        // that state, or not published yet).
+        // A missing file means the office has no result there (not published
+        // yet, or no runoff in that state).
         $payloads = collect($this->client->fetchMany($urls))
             ->filter()
             ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
             ->all();
 
-        foreach ($payloads as $payload) {
-            $this->allFinal = $this->allFinal && $payload->isFinal;
-        }
+        foreach ($payloads as $uf => $payload) {
+            $this->track($payload);
 
-        if (! $office->isNationwide()) {
-            foreach ($payloads as $uf => $payload) {
-                $this->storeCandidates($office, State::from($uf), $payload);
+            if (! $office->isNationwide()) {
+                $this->storeCandidates($office, State::from($uf), null, $payload);
             }
         }
 
-        $this->storeResults($electionCode, $office, Result::SCOPE_STATE, $payloads);
+        $this->storeResults($election, $office, Result::SCOPE_STATE, $payloads);
 
         return count($payloads);
     }
 
     /**
+     * Results per municipality: where municipal offices are elected, and the
+     * map of the offices elected in a larger place.
+     *
      * @param  list<Office>  $offices
-     * @param  array<string, list<State>>  $disputedStates  keyed by office
      */
-    private function syncMunicipalities(int $electionCode, array $offices, array $disputedStates, bool $full): int
+    private function syncMunicipalities(Election $election, array $offices): int
     {
-        if ($offices === []) {
-            return 0;
+        $listed = $election->municipalities();
+        $synced = 0;
+        $followed = [];
+
+        foreach ($offices as $office) {
+            if ($office->isMunicipal() && $listed !== null) {
+                // Few municipalities, without progress files: always fetched.
+                $synced += $this->downloadMunicipalities($election, $office, $listed);
+            } elseif ($office->isMunicipal() || $office->hasMap()) {
+                $followed[] = $office;
+            }
+        }
+
+        if ($followed === []) {
+            return $synced;
         }
 
         $states = [];
 
-        foreach ($offices as $office) {
-            foreach ($disputedStates[$office->value] as $state) {
+        foreach ($followed as $office) {
+            foreach ($election->statesFor($office) as $state) {
                 if (! in_array($state, $states, true)) {
                     $states[] = $state;
                 }
             }
         }
 
-        [$progress, $reported] = $this->municipalityProgress($electionCode, $states);
+        [$progress, $reported] = $this->municipalityProgress($election, $states);
 
         if (Municipality::query()->count() < count($reported)) {
-            $this->importMunicipalities($electionCode);
+            $this->importMunicipalities($election);
         }
 
+        foreach ($followed as $office) {
+            $outdated = $this->outdatedMunicipalities($election, $office, $election->statesFor($office), $progress);
+            $synced += $this->downloadMunicipalities($election, $office, $outdated);
+        }
+
+        return $synced;
+    }
+
+    /**
+     * @param  array<string, State>  $municipalities  TSE code => state
+     */
+    private function downloadMunicipalities(Election $election, Office $office, array $municipalities): int
+    {
         $synced = 0;
 
-        foreach ($offices as $office) {
-            $outdated = $this->outdatedMunicipalities($electionCode, $office, $disputedStates[$office->value], $progress, $full);
+        foreach (array_chunk($municipalities, self::MUNICIPALITY_BATCH, preserve_keys: true) as $chunk) {
+            $urls = [];
 
-            foreach (array_chunk($outdated, 300, preserve_keys: true) as $chunk) {
-                $urls = [];
-
-                foreach ($chunk as $tseCode => $state) {
-                    $urls[$tseCode] = $this->client->municipalityResultUrl($electionCode, $office, $state, (string) $tseCode);
-                }
-
-                $payloads = collect($this->client->fetchMany($urls))
-                    ->filter()
-                    ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
-                    ->all();
-
-                $this->storeResults($electionCode, $office, Result::SCOPE_MUNICIPALITY, $payloads);
-
-                $synced += count($payloads);
+            foreach ($chunk as $tseCode => $state) {
+                $urls[$tseCode] = $this->client->municipalityResultUrl($election, $office, $state, (string) $tseCode);
             }
+
+            $payloads = collect($this->client->fetchMany($urls))
+                ->filter()
+                ->map(fn (array $json): ResultPayload => ResultPayload::fromTse($json))
+                ->all();
+
+            foreach ($payloads as $tseCode => $payload) {
+                $this->track($payload);
+
+                if ($office->isMunicipal()) {
+                    $this->storeCandidates($office, $chunk[$tseCode], (string) $tseCode, $payload);
+                }
+            }
+
+            $this->storeResults($election, $office, Result::SCOPE_MUNICIPALITY, $payloads);
+
+            // Councillors of every municipality add up to hundreds of
+            // thousands of candidates: keep only the ones of this batch.
+            if ($office->isMunicipal()) {
+                $this->candidateIds = [];
+            }
+
+            $synced += count($payloads);
         }
 
         return $synced;
@@ -344,10 +366,10 @@ class ResultSynchronizer
      * @param  list<State>  $states
      * @return array{0: array<string, array{state: State, updated_at: string|null, counted: bool}>, 1: list<string>}
      */
-    private function municipalityProgress(int $electionCode, array $states): array
+    private function municipalityProgress(Election $election, array $states): array
     {
         $urls = collect($states)
-            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateProgressUrl($electionCode, $state)])
+            ->mapWithKeys(fn (State $state): array => [$state->value => $this->client->stateProgressUrl($election, $state)])
             ->all();
 
         $progress = [];
@@ -366,6 +388,11 @@ class ResultSynchronizer
                     'updated_at' => ResultPayload::dateTime($municipality['dt'] ?? null, $municipality['ht'] ?? null)?->format('Y-m-d H:i:s'),
                     'counted' => (int) ($municipality['s']['st'] ?? 0) > 0,
                 ];
+
+                // The count of the election is not over while a municipality
+                // is still being counted, even if its file was not fetched.
+                $this->seen++;
+                $this->allFinal = $this->allFinal && ($municipality['and'] ?? null) === 'f';
             }
         }
 
@@ -380,9 +407,9 @@ class ResultSynchronizer
      * @param  array<string, array{state: State, updated_at: string|null, counted: bool}>  $progress
      * @return array<string, State>
      */
-    private function outdatedMunicipalities(int $electionCode, Office $office, array $states, array $progress, bool $full): array
+    private function outdatedMunicipalities(Election $election, Office $office, array $states, array $progress): array
     {
-        $storedUpdates = $this->storedUpdates($electionCode, $office, Result::SCOPE_MUNICIPALITY);
+        $storedUpdates = $this->storedUpdates($election->tse_code, $office, Result::SCOPE_MUNICIPALITY);
 
         $outdated = [];
 
@@ -397,7 +424,7 @@ class ResultSynchronizer
                 continue;
             }
 
-            if ($full || ($storedUpdates[$tseCode] ?? null) !== $municipality['updated_at']) {
+            if ($this->full || ($storedUpdates[$tseCode] ?? null) !== $municipality['updated_at']) {
                 $outdated[$tseCode] = $municipality['state'];
             }
         }
@@ -422,22 +449,26 @@ class ResultSynchronizer
             ->all();
     }
 
-    private function storeCandidates(Office $office, ?State $state, ResultPayload $payload): void
+    private function storeCandidates(Office $office, ?State $state, ?string $municipality, ResultPayload $payload): void
     {
         $now = now();
 
         $rows = collect($payload->candidates)
             ->map(fn (array $candidate): array => [
                 ...collect($candidate)->except(['votes', 'elected'])->all(),
+                'election_code' => $this->candidateElectionCode,
                 'office' => $office->value,
                 'state' => $state?->value,
+                'municipality' => $municipality,
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
             ->all();
 
+        // The election is only set when the candidate is registered: a runoff
+        // keeps pointing to the first round.
         foreach (array_chunk($rows, 500) as $chunk) {
-            Candidate::query()->upsert($chunk, ['tse_sequence'], ['office', 'state', 'number', 'ballot_name', 'full_name', 'party', 'updated_at']);
+            Candidate::query()->upsert($chunk, ['tse_sequence'], ['office', 'state', 'municipality', 'number', 'ballot_name', 'full_name', 'party', 'updated_at']);
         }
 
         $this->rememberCandidateIds(array_column($payload->candidates, 'tse_sequence'));
@@ -460,10 +491,10 @@ class ResultSynchronizer
     /**
      * @param  array<string, ResultPayload>  $payloads  keyed by scope code
      */
-    private function storeResults(int $electionCode, Office $office, string $scope, array $payloads): void
+    private function storeResults(Election $election, Office $office, string $scope, array $payloads): void
     {
         if ($payloads !== [] && ! $this->full) {
-            $storedUpdates = $this->storedUpdates($electionCode, $office, $scope, array_map(strval(...), array_keys($payloads)));
+            $storedUpdates = $this->storedUpdates($election->tse_code, $office, $scope, array_map(strval(...), array_keys($payloads)));
 
             $payloads = array_filter(
                 $payloads,
@@ -505,7 +536,7 @@ class ResultSynchronizer
             $leaderId = array_key_first($votes);
 
             $rows[] = [
-                'election_code' => $electionCode,
+                'election_code' => $election->tse_code,
                 'office' => $office->value,
                 'scope' => $scope,
                 'scope_code' => (string) $scopeCode,

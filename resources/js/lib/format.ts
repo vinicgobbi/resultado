@@ -37,3 +37,12 @@ export function contrastText(hex: string): string {
 
     return r * 0.299 + g * 0.587 + b * 0.114 > 160 ? '#18181b' : '#ffffff';
 }
+
+/**
+ * "2026-10-04" → "04/10/2026", without time zone shifts.
+ */
+export function formatDate(value: string): string {
+    const [year, month, day] = value.split('-');
+
+    return `${day}/${month}/${year}`;
+}

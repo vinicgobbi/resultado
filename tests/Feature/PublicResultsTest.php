@@ -3,6 +3,7 @@
 use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
+use App\Models\Election;
 use App\Models\Municipality;
 use App\Models\Result;
 use App\Models\User;
@@ -11,6 +12,8 @@ use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+
+beforeEach(fn () => elections2026('2026-10-26 12:00:00'));
 
 /**
  * @param  array<int, int>  $votes
@@ -43,7 +46,9 @@ test('home page shows the active round with national, state and map results', fu
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('results/index')
-            ->where('round', 2)
+            ->where('election.code', 6258)
+            ->where('election.round', 2)
+            ->where('rounds', [['round' => 1, 'code' => 6257], ['round' => 2, 'code' => 6258]])
             ->where('summary.results.0', ['candidate_id' => $first->id, 'votes' => 300, 'percent' => 75])
             ->where('states.0.code', 'SP')
             ->where('states.0.leader_id', $second->id)
@@ -74,8 +79,10 @@ test('changing a candidate color invalidates the cached results', function () {
     $this->actingAs(User::factory()->create())
         ->patch(route('admin.candidates.update', $candidate), ['color' => '#aa00ff']);
 
+    // Its election and the runoff.
     expect(ResultSynchronizer::version(6257))->toBe(1)
-        ->and(ResultSynchronizer::version(6258))->toBe(1);
+        ->and(ResultSynchronizer::version(6258))->toBe(1)
+        ->and(ResultSynchronizer::version(6259))->toBe(0);
 });
 
 test('the map geometry is not sent again to a browser that has it', function () {
@@ -92,17 +99,22 @@ test('the map geometry is not sent again to a browser that has it', function () 
         ->assertContent('');
 });
 
-test('home page renders without synchronized results', function () {
-    $this->get(route('home', ['turno' => 1]))
+test('an election renders without synchronized results', function () {
+    $this->get(route('elections.show', 6257))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('round', 1)
+            ->where('election.round', 1)
             ->where('summary', null)
             ->where('candidates', []));
 });
 
-test('an unknown round is rejected', function () {
-    $this->get(route('home', ['turno' => 9]))->assertSessionHasErrors('turno');
+test('old round links are sent to the election of that round', function () {
+    $this->get('/?turno=1&cargo=governador&uf=rj')
+        ->assertRedirect(route('elections.show', [6257, 'cargo' => 'governador', 'uf' => 'rj']));
+
+    // The office belongs to the state election of the same day.
+    $this->get(route('elections.show', [6257, 'cargo' => 'governador', 'uf' => 'rj']))
+        ->assertRedirect(route('elections.show', [6259, 'cargo' => 'governador', 'uf' => 'rj']));
 });
 
 test('municipality endpoint returns its detailed result', function () {
@@ -110,13 +122,13 @@ test('municipality endpoint returns its detailed result', function () {
     $municipality = Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO', 'is_capital' => true]);
     storeResult(Result::SCOPE_MUNICIPALITY, '71072', [$candidate->id => 50]);
 
-    $this->getJson(route('municipalities.show', $municipality))
+    $this->getJson(route('municipalities.show', [6258, $municipality]))
         ->assertOk()
         ->assertJsonPath('state', 'SP')
         ->assertJsonPath('result.results.0.percent', 100)
         ->assertJsonPath('candidates.0.color', '#123456');
 
-    $this->getJson(route('municipalities.show', '9999999'))->assertNotFound();
+    $this->getJson(route('municipalities.show', [6258, '9999999']))->assertNotFound();
 });
 
 test('summary endpoint lists the leading candidates for notifications', function () {
@@ -224,7 +236,7 @@ test('a state office shows the result of the chosen state and its municipalities
     storeResult(Result::SCOPE_MUNICIPALITY, '60011', [$first->id => 3, $second->id => 1], 6259)->update(['office' => Office::Governor]);
     storeResult(Result::SCOPE_MUNICIPALITY, '71072', [$other->id => 1], 6259)->update(['office' => Office::Governor]);
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'governador', 'uf' => 'rj']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'governador', 'uf' => 'rj']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('office', 'governador')
@@ -238,7 +250,7 @@ test('a state office shows the result of the chosen state and its municipalities
                 ->where('map', ['3304557' => [$first->id, 75, 50]])));
 
     $municipality = Municipality::query()->where('tse_code', '60011')->sole();
-    $this->getJson(route('municipalities.show', ['municipality' => $municipality, 'turno' => 1, 'cargo' => 'governador']))
+    $this->getJson(route('municipalities.show', ['election' => 6259, 'municipality' => $municipality, 'cargo' => 'governador']))
         ->assertOk()
         ->assertJsonPath('result.results.0.candidate_id', $first->id);
 });
@@ -250,7 +262,7 @@ test('a state office shows nothing until the visitor picks a state', function ()
     storeResult(Result::SCOPE_MUNICIPALITY, '71072', [$candidate->id => 1], 6259)->update(['office' => Office::Governor]);
 
     foreach ([[], ['uf' => 'rj'], ['uf' => 'xx']] as $query) {
-        $this->get(route('home', ['turno' => 1, 'cargo' => 'governador', ...$query]))
+        $this->get(route('elections.show', [6259, 'cargo' => 'governador', ...$query]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('state', null)
@@ -262,12 +274,12 @@ test('a state office shows nothing until the visitor picks a state', function ()
 });
 
 test('an office that is not disputed in the round falls back to president', function () {
-    $this->get(route('home', ['turno' => 2, 'cargo' => 'senador']))
+    $this->get(route('elections.show', [6258, 'cargo' => 'senador']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('office', 'presidente')
             ->where('offices', [
-                ['value' => 'presidente', 'label' => 'Presidente'],
-                ['value' => 'governador', 'label' => 'Governador'],
+                ['value' => 'presidente', 'label' => 'Presidente', 'election' => 6258],
+                ['value' => 'governador', 'label' => 'Governador', 'election' => 6260],
             ]));
 });
 
@@ -276,7 +288,7 @@ test('senators that cannot be caught are mathematically elected', function () {
     // 100 voters left: the second leads the third by 150, the first by 250.
     storeStateResult(Office::Senator, 'sp', [$first->id => 500, $second->id => 400, $third->id => 250], ['seats' => 2]);
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'senador', 'uf' => 'sp']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'senador', 'uf' => 'sp']))
         ->assertInertia(fn (Assert $page) => $page->where('summary.winners', [
             ['candidate_id' => $first->id, 'status' => 'mathematical'],
             ['candidate_id' => $second->id, 'status' => 'mathematical'],
@@ -287,7 +299,7 @@ test('a senator still within reach is not elected', function () {
     [$first, $second, $third] = Candidate::factory()->count(3)->running(Office::Senator, State::SaoPaulo)->create();
     storeStateResult(Office::Senator, 'sp', [$first->id => 500, $second->id => 400, $third->id => 350], ['seats' => 2]);
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'senador', 'uf' => 'sp']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'senador', 'uf' => 'sp']))
         ->assertInertia(fn (Assert $page) => $page->where('summary.winners', [
             ['candidate_id' => $first->id, 'status' => 'mathematical'],
         ]));
@@ -297,7 +309,7 @@ test('deputies are only elected by the TSE and have no map', function () {
     [$elected, $leader] = Candidate::factory()->count(2)->running(Office::StateDeputy, State::DistritoFederal)->create();
     storeStateResult(Office::StateDeputy, 'df', [$leader->id => 900, $elected->id => 100], ['seats' => 24, 'valid_votes' => 2000]);
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'deputado-estadual', 'uf' => 'df']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'deputado-estadual', 'uf' => 'df']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('summary.winners', [])
             ->where('summary.results.0.percent', 45)
@@ -307,7 +319,7 @@ test('deputies are only elected by the TSE and have no map', function () {
     Result::query()->update(['elected_candidate_ids' => [$elected->id]]);
     Cache::flush();
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'deputado-estadual', 'uf' => 'df']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'deputado-estadual', 'uf' => 'df']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('summary.winners', [['candidate_id' => $elected->id, 'status' => 'elected']]));
 });
@@ -342,8 +354,83 @@ test('deputies keep the color of their party', function () {
     [$first, $second] = Candidate::factory()->count(2)->running(Office::FederalDeputy, State::SaoPaulo)->create(['party' => 'PT']);
     storeStateResult(Office::FederalDeputy, 'sp', [$first->id => 500, $second->id => 300]);
 
-    $this->get(route('home', ['turno' => 1, 'cargo' => 'deputado-federal', 'uf' => 'sp']))
+    $this->get(route('elections.show', [6259, 'cargo' => 'deputado-federal', 'uf' => 'sp']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('candidates.0.color', '#c4161c')
             ->where('candidates.1.color', '#c4161c'));
+});
+
+/**
+ * @param  array<int, int>  $votes
+ * @param  array<string, mixed>  $attributes
+ */
+function storeMunicipalResult(Office $office, string $municipality, array $votes, array $attributes = []): Result
+{
+    arsort($votes);
+
+    return Result::create([
+        'election_code' => 619,
+        'office' => $office,
+        'scope' => Result::SCOPE_MUNICIPALITY,
+        'scope_code' => $municipality,
+        'sections_total' => 100,
+        'sections_counted' => 90,
+        'counted_percent' => 90,
+        'electorate' => 1000,
+        'electorate_counted' => 900,
+        'valid_votes' => array_sum($votes),
+        'votes' => $votes,
+        'leading_candidate_id' => array_key_first($votes),
+        ...$attributes,
+    ]);
+}
+
+test('a municipal office shows the result of the chosen municipality, without a map', function () {
+    Election::factory()->municipal2024()->completed()->create();
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    [$first, $second] = Candidate::factory()->count(2)->running(Office::Mayor, State::SaoPaulo, '71072')->create();
+    // 1000 voters, 900 counted: a lead of 300 cannot be caught by the 100 left.
+    storeMunicipalResult(Office::Mayor, '71072', [$first->id => 500, $second->id => 200]);
+
+    $this->get(route('elections.show', [619, 'uf' => 'sp']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('office', 'prefeito')
+            ->where('state', 'SP')
+            ->where('municipalities.0.code', '71072')
+            ->where('municipality', null)
+            ->where('summary', null));
+
+    $this->get(route('elections.show', [619, 'uf' => 'sp', 'municipio' => '71072']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('municipality', ['code' => '71072', 'name' => 'SÃO PAULO'])
+            ->where('summary.results.0.candidate_id', $first->id)
+            ->where('summary.winners', [['candidate_id' => $first->id, 'status' => 'mathematical']])
+            ->has('candidates', 2)
+            ->where('mapAvailable', false));
+});
+
+test('mayors of large municipalities need more than half of the valid votes', function () {
+    Election::factory()->municipal2024()->create();
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    [$first, $second, $third] = Candidate::factory()->count(3)->running(Office::Mayor, State::SaoPaulo, '71072')->create();
+    $votes = [$first->id => 400_000, $second->id => 300_000, $third->id => 200_000];
+    storeMunicipalResult(Office::Mayor, '71072', $votes, ['electorate' => 1_000_000, 'electorate_counted' => 990_000]);
+
+    // A lead of 100,000 with 10,000 voters left, but no majority.
+    $this->get(route('elections.show', [619, 'uf' => 'sp', 'municipio' => '71072']))
+        ->assertInertia(fn (Assert $page) => $page->where('summary.winners', []));
+});
+
+test('the archive lists every election', function () {
+    Election::factory()->municipal2024()->completed()->create();
+
+    $this->get(route('elections.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('elections/index')
+            ->has('elections', 5)
+            ->where('elections.0.code', 6258)
+            ->where('elections.0.status', 'apuracao')
+            ->where('elections.4.code', 619)
+            ->where('elections.4.status', 'concluida')
+            ->where('elections.4.offices', ['Prefeito', 'Vereador']));
 });

@@ -2,20 +2,21 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\Office;
 use App\Jobs\SendResultsNotification;
+use App\Models\Election;
 use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\WebPush;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 
 #[Signature('tse:sincronizar
-    {--turno= : Turno a sincronizar (padrão: turno ativo)}
+    {--eleicao=* : Códigos do TSE das eleições a sincronizar (padrão: as que estão em apuração)}
     {--completo : Rebaixa tudo, mesmo eleições concluídas e municípios que não mudaram}
     {--sem-notificacao : Não envia notificações push}')]
-#[Description('Sincroniza os resultados de todos os cargos a partir da divulgação do TSE')]
+#[Description('Sincroniza os resultados das eleições em apuração a partir da divulgação do TSE')]
 class SyncElectionResults extends Command
 {
     /**
@@ -23,24 +24,19 @@ class SyncElectionResults extends Command
      */
     public function handle(ResultSynchronizer $synchronizer): int
     {
-        $round = (int) ($this->option('turno') ?: config('eleicoes.turno_ativo'));
-
-        // Offices grouped by the TSE election that holds them.
-        $elections = collect(Office::forRound($round))
-            ->groupBy(fn (Office $office): int => (int) $office->electionCode($round))
-            ->reject(fn ($offices, int $electionCode): bool => $electionCode === 0);
+        $elections = $this->elections();
 
         if ($elections->isEmpty()) {
-            $this->components->error("Turno {$round} não configurado.");
+            $this->components->info('Nenhuma eleição em apuração agora.');
 
-            return self::FAILURE;
+            return self::SUCCESS;
         }
 
         $countryChanged = false;
 
-        foreach ($elections as $electionCode => $offices) {
-            if (! $this->option('completo') && ResultSynchronizer::isComplete($electionCode)) {
-                $this->components->info("Eleição {$electionCode} já concluída e sincronizada; nada a baixar.");
+        foreach ($elections as $election) {
+            if (! $this->option('completo') && $election->completed_at !== null) {
+                $this->components->info("{$election->name}: já concluída e sincronizada; nada a baixar.");
 
                 continue;
             }
@@ -48,7 +44,7 @@ class SyncElectionResults extends Command
             $started = microtime(true);
 
             try {
-                $totals = $synchronizer->sync($electionCode, array_values($offices->all()), (bool) $this->option('completo'));
+                $totals = $synchronizer->sync($election, (bool) $this->option('completo'));
             } catch (RateLimitedException $exception) {
                 $this->components->warn($exception->getMessage());
 
@@ -58,9 +54,8 @@ class SyncElectionResults extends Command
             $countryChanged = $countryChanged || $totals['country_changed'];
 
             $this->components->info(sprintf(
-                '%dº turno, %s%s: %d resultados estaduais e %d municipais atualizados em %.1fs.',
-                $round,
-                $offices->map(fn (Office $office): string => $office->label())->join(', ', ' e '),
+                '%s%s: %d resultados estaduais e %d municipais atualizados em %.1fs.',
+                $election->name,
                 $totals['counted_percent'] === null ? '' : ' ('.number_format($totals['counted_percent'], 2, ',', '.').'% das seções apuradas)',
                 $totals['states'],
                 $totals['municipalities'],
@@ -75,5 +70,23 @@ class SyncElectionResults extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return Collection<int, Election>
+     */
+    private function elections(): Collection
+    {
+        $codes = array_map(intval(...), $this->option('eleicao'));
+
+        return Election::query()
+            ->when(
+                $codes === [],
+                // A full sync also downloads again the completed ones.
+                fn ($query) => $this->option('completo') ? $query->recent() : $query->live(),
+                fn ($query) => $query->whereIn('tse_code', $codes),
+            )
+            ->orderBy('date')
+            ->get();
     }
 }

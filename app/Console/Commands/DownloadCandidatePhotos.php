@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\Office;
 use App\Models\Candidate;
+use App\Models\Election;
 use App\Services\Tse\CandidatePhotos;
 use App\Services\Tse\RateLimitedException;
 use Illuminate\Console\Attributes\Description;
@@ -12,6 +13,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Sleep;
 
 #[Signature('tse:fotos
+    {--eleicao=* : Códigos do TSE das eleições (padrão: as da eleição atual)}
     {--cargo=* : Cargos a baixar (padrão: todos), ex.: --cargo=governador}
     {--sem-espera : Para no primeiro 429 em vez de esperar a pausa e continuar}')]
 #[Description('Baixa do TSE as fotos dos candidatos que ainda não têm foto, em ritmo que evita o bloqueio (HTTP 429)')]
@@ -37,6 +39,8 @@ class DownloadCandidatePhotos extends Command
 
         $order = array_flip(array_map(fn (Office $office): string => $office->value, Office::cases()));
         $candidates = Candidate::query()
+            ->with('election')
+            ->whereIn('election_code', $this->electionCodes())
             ->whereIn('office', $offices === [] ? Office::cases() : $offices)
             ->get()
             // Majority offices first: they are the ones celebrated in big.
@@ -92,5 +96,25 @@ class DownloadCandidatePhotos extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Elections whose candidates are downloaded: the chosen ones, or the
+     * current ones (every candidate of the past would be hundreds of
+     * thousands of photos; the others are downloaded when first shown).
+     *
+     * @return list<int>
+     */
+    private function electionCodes(): array
+    {
+        $codes = array_values(array_map(intval(...), $this->option('eleicao')));
+
+        if ($codes !== []) {
+            return $codes;
+        }
+
+        return array_values(array_filter(Election::current()?->siblings()
+            ->map(fn (Election $election): ?int => $election->firstRound()?->tse_code)
+            ->all() ?? []));
     }
 }

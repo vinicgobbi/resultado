@@ -4,6 +4,7 @@ use App\Enums\Office;
 use App\Enums\State;
 use App\Jobs\SendResultsNotification;
 use App\Models\Candidate;
+use App\Models\Election;
 use App\Models\Municipality;
 use App\Models\PushSubscription;
 use App\Models\Result;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 
 const TSE_BASE = 'https://resultados.tse.jus.br/oficial/ele2026/6258';
+
+beforeEach(fn () => elections2026());
 
 /**
  * Minimal TSE "-u.json" result file.
@@ -93,7 +96,7 @@ test('sync stores candidates and results for every scope', function () {
     Http::preventStrayRequests();
     fakeTse();
 
-    $this->artisan('tse:sincronizar', ['--turno' => 2])->assertSuccessful();
+    $this->artisan('tse:sincronizar')->assertSuccessful();
 
     expect(Municipality::query()->pluck('ibge_code', 'tse_code')->all())
         ->toBe(['71072' => '3550308', '61000' => '3500105', '29254' => null]);
@@ -326,7 +329,7 @@ test('sync stores the governor, senator and deputy results of the state election
         'resultados.tse.jus.br/*' => Http::response('', 404),
     ]);
 
-    $this->artisan('tse:sincronizar', ['--turno' => 1, '--sem-notificacao' => true])->assertSuccessful();
+    $this->artisan('tse:sincronizar', ['--eleicao' => [6257, 6259], '--sem-notificacao' => true])->assertSuccessful();
 
     $ids = Candidate::query()->pluck('id', 'tse_sequence');
     expect(Candidate::query()->where('tse_sequence', '250000000001')->sole())
@@ -355,18 +358,11 @@ test('sync stores the governor, senator and deputy results of the state election
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'sp71072-c0006'));
 });
 
-test('the governor runoff is only requested where nobody was elected in the first round', function () {
+test('a runoff is only requested where the TSE lists it', function () {
     Http::preventStrayRequests();
     fakeTse();
-    $candidate = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
-    foreach (['sp' => [$candidate->id], 'df' => null] as $state => $elected) {
-        Result::create([
-            'election_code' => 6259, 'office' => Office::Governor, 'scope' => Result::SCOPE_STATE, 'scope_code' => $state,
-            'votes' => [$candidate->id => 10], 'elected_candidate_ids' => $elected,
-        ]);
-    }
 
-    $this->artisan('tse:sincronizar', ['--turno' => 2, '--sem-notificacao' => true])->assertSuccessful();
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
 
     $runoffRequests = Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/6260/'))
         ->map(fn (array $pair): string => basename($pair[0]->url()))
@@ -401,15 +397,19 @@ test('an election whose results are all final is not downloaded again', function
     fakeTse(overrides: [
         TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response($final(tseResult(['280002551544' => 600, '280002542548' => 400]))),
         TSE_BASE.'/dados/sp/sp-c0001-e006258-u.json' => Http::response($final(tseResult(['280002551544' => 300, '280002542548' => 200]))),
+        TSE_BASE.'/dados/sp/sp-e006258-ab.json' => Http::response(['abr' => [
+            ['tpabr' => 'mun', 'cdabr' => '71072', 'and' => 'f', 'dt' => '25/10/2026', 'ht' => '19:59:00', 's' => ['st' => '10']],
+        ]]),
+        TSE_BASE.'/dados/sp/sp71072-c0001-e006258-u.json' => Http::response($final(tseResult(['280002551544' => 100, '280002542548' => 300], '19:59:00', '10'))),
     ]);
 
     $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
     $requests = fn (): int => Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/6258/'))->count();
     $afterFirstSync = $requests();
 
-    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])
-        ->expectsOutputToContain('Eleição 6258 já concluída')
-        ->assertSuccessful();
+    expect(Election::query()->where('tse_code', 6258)->sole()->completed_at)->not->toBeNull();
+
+    $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
     expect($requests())->toBe($afterFirstSync);
 
     $this->artisan('tse:sincronizar', ['--sem-notificacao' => true, '--completo' => true])->assertSuccessful();
@@ -425,7 +425,7 @@ test('an election with failed downloads is not complete', function () {
 
     $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
 
-    expect(ResultSynchronizer::isComplete(6258))->toBeFalse();
+    expect(Election::query()->where('tse_code', 6258)->sole()->completed_at)->toBeNull();
 });
 
 test('a photo blocked by a 429 is retried later instead of marked as missing', function () {

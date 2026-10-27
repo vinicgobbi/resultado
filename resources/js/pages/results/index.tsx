@@ -2,19 +2,28 @@ import { Head, Link, router, useHttp, usePoll } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import CandidateResults from '@/components/candidate-results';
 import MunicipalityPanel from '@/components/municipality-panel';
+import MunicipalityPicker from '@/components/municipality-picker';
 import NotificationToggle from '@/components/notification-toggle';
 import ResultsMap from '@/components/results-map';
 import StatesTable from '@/components/states-table';
 import WinnerCelebration from '@/components/winner-celebration';
 import type { CelebratedWinner } from '@/components/winner-celebration';
-import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
+import {
+    formatDate,
+    formatDateTime,
+    formatNumber,
+    formatPercent,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { home } from '@/routes';
+import { index as electionsIndex, show } from '@/routes/elections';
 import { show as showMunicipality } from '@/routes/municipalities';
 import type {
     Candidate,
+    Election,
+    ElectionLevel,
     MapResults,
     MunicipalityDetail,
+    MunicipalityOption,
     OfficeOption,
     Place,
     ResultSummary,
@@ -22,15 +31,21 @@ import type {
 } from '@/types';
 
 type Props = {
-    round: number;
-    rounds: number[];
+    election: Election;
+    /** Both rounds of the election, each one its own TSE election. */
+    rounds: { round: number; code: number }[];
     office: string;
     offices: OfficeOption[];
-    /** Abbreviation of the state of a state office. */
+    level: ElectionLevel;
+    /** Abbreviation of the chosen state. */
     state: string | null;
+    municipality: { code: string; name: string } | null;
     /** Changes whenever the synchronized results change. */
     version: number;
     places: Place[];
+    municipalities: MunicipalityOption[];
+    /** Seats split by party: deputies and councillors. */
+    proportional: boolean;
     candidates: Candidate[];
     summary: ResultSummary | null;
     states: StateResult[];
@@ -39,8 +54,6 @@ type Props = {
 };
 
 const POLL_INTERVAL = 20_000;
-
-const PRESIDENT = 'presidente';
 
 /**
  * "Governador" → "governadores", "Deputado Federal" → "deputados federais".
@@ -61,7 +74,7 @@ function plural(label: string): string {
 
 function celebrationTitle(
     officeLabel: string,
-    stateName: string | undefined,
+    placeName: string | undefined,
     count: number,
     mathematical: boolean,
 ): string {
@@ -69,17 +82,21 @@ function celebrationTitle(
     const office = count > 1 ? plural(officeLabel) : officeLabel.toLowerCase();
     const title = `${elected.charAt(0).toUpperCase()}${elected.slice(1)} ${office}`;
 
-    return stateName ? `${title} · ${stateName}` : `${title} do Brasil`;
+    return placeName ? `${title} · ${placeName}` : `${title} do Brasil`;
 }
 
 export default function ResultsIndex({
-    round,
+    election,
     rounds,
     office,
     offices,
+    level,
     state,
+    municipality,
     version,
     places,
+    municipalities,
+    proportional,
     candidates,
     summary,
     states,
@@ -90,6 +107,13 @@ export default function ResultsIndex({
     const [detail, setDetail] = useState<MunicipalityDetail | null>(null);
     const http = useHttp<Record<string, never>, MunicipalityDetail>({});
 
+    const isNationwide = level === 'country';
+    const isMunicipal = level === 'municipality';
+    // The place where the office is elected was chosen.
+    const placeChosen =
+        isNationwide || (isMunicipal ? !!municipality : !!state);
+    const live = election.status === 'apuracao';
+
     // Polls only the version; the results are downloaded again when it
     // changes.
     usePoll(
@@ -97,9 +121,7 @@ export default function ResultsIndex({
         { only: ['version'], showProgress: false },
         {
             mode: 'rest',
-            // A state office shows nothing until a state is picked.
-            autoStart:
-                (office === PRESIDENT || state !== null) && !summary?.is_final,
+            autoStart: live && placeChosen && !summary?.is_final,
         },
     );
     const loadedVersion = useRef(version);
@@ -111,7 +133,14 @@ export default function ResultsIndex({
 
         loadedVersion.current = version;
         router.reload({
-            only: ['candidates', 'summary', 'states', 'places', 'map'],
+            only: [
+                'candidates',
+                'summary',
+                'states',
+                'places',
+                'municipalities',
+                'map',
+            ],
             showProgress: false,
         });
     }, [version]);
@@ -120,12 +149,12 @@ export default function ResultsIndex({
         candidates.map((candidate) => [candidate.id, candidate]),
     );
 
-    const isNationwide = office === PRESIDENT;
     const officeLabel =
         offices.find((option) => option.value === office)?.label ?? '';
     const stateName = places.find((place) => place.code === state)?.name;
-    // Deputies: seats split by party, results only per state.
-    const proportional = office.startsWith('deputado');
+    const placeName = isMunicipal
+        ? municipality && `${municipality.name} (${state})`
+        : stateName;
 
     const winners = summary?.winners ?? [];
     const celebrated: CelebratedWinner[] = winners.flatMap((winner) => {
@@ -159,42 +188,50 @@ export default function ResultsIndex({
     }, [winnerIds]);
 
     /**
-     * Query string of a view, keeping the current office and state.
+     * Page of a view of an election, keeping the current office and place.
      */
-    function viewQuery(changes: {
-        turno?: number;
-        cargo?: string;
-        uf?: string | null;
-    }) {
+    function viewHref(
+        code: number,
+        changes: {
+            cargo?: string;
+            uf?: string | null;
+            municipio?: string | null;
+        } = {},
+    ) {
         const view = {
-            turno: round,
             cargo: office,
             uf: state?.toLowerCase() ?? null,
+            municipio: municipality?.code ?? null,
             ...changes,
         };
 
-        return {
-            turno: view.turno,
-            ...(view.cargo !== PRESIDENT && { cargo: view.cargo }),
-            ...(view.cargo !== PRESIDENT && view.uf && { uf: view.uf }),
-        };
+        return show(code, {
+            query: {
+                cargo: view.cargo,
+                ...(view.uf && { uf: view.uf }),
+                ...(view.uf && view.municipio && { municipio: view.municipio }),
+            },
+        });
     }
 
     function selectMunicipality(ibge: string) {
         setDetail(null);
         void http
             .get(
-                showMunicipality.url(ibge, {
-                    query: { turno: round, cargo: office },
+                showMunicipality.url([election.code, ibge], {
+                    query: { cargo: office },
                 }),
             )
             .then(setDetail);
     }
 
+    const pickState = !isNationwide && !state && places.length > 0;
+    const pickMunicipality = isMunicipal && !!state && !municipality;
+
     return (
         <>
             <Head
-                title={`${officeLabel}${state ? ` ${state}` : ''} · ${round}º turno`}
+                title={`${officeLabel}${placeName ? ` ${placeName}` : ''} · ${election.year} · ${election.round}º turno`}
             />
 
             <div className="min-h-screen bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
@@ -208,36 +245,43 @@ export default function ResultsIndex({
                             />
                             <div>
                                 <h1 className="text-lg leading-tight font-bold text-zinc-900 dark:text-zinc-50">
-                                    Eleições 2026 · {officeLabel}
-                                    {stateName && ` · ${stateName}`}
+                                    Eleições {election.year} · {officeLabel}
+                                    {placeName && ` · ${placeName}`}
                                 </h1>
                                 <p className="text-xs text-zinc-500">
-                                    Dados oficiais da divulgação do TSE
+                                    {formatDate(election.date)} · Dados oficiais
+                                    da divulgação do TSE
                                 </p>
                             </div>
                         </div>
 
-                        <nav className="flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800">
-                            {rounds.map((value) => (
-                                <Link
-                                    key={value}
-                                    href={home({
-                                        query: viewQuery({ turno: value }),
-                                    })}
-                                    preserveScroll
-                                    className={cn(
-                                        'rounded-full px-4 py-1.5 text-sm font-medium',
-                                        value === round
-                                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-                                            : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
-                                    )}
-                                >
-                                    {value}º turno
-                                </Link>
-                            ))}
-                        </nav>
+                        {rounds.length > 1 && (
+                            <nav className="flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800">
+                                {rounds.map((option) => (
+                                    <Link
+                                        key={option.code}
+                                        href={viewHref(option.code)}
+                                        preserveScroll
+                                        className={cn(
+                                            'rounded-full px-4 py-1.5 text-sm font-medium',
+                                            option.code === election.code
+                                                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
+                                                : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
+                                        )}
+                                    >
+                                        {option.round}º turno
+                                    </Link>
+                                ))}
+                            </nav>
+                        )}
 
-                        <div className="ml-auto">
+                        <div className="ml-auto flex items-center gap-3">
+                            <Link
+                                href={electionsIndex()}
+                                className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                            >
+                                Outras eleições
+                            </Link>
                             <NotificationToggle />
                         </div>
                     </div>
@@ -247,11 +291,10 @@ export default function ResultsIndex({
                             {offices.map((option) => (
                                 <Link
                                     key={option.value}
-                                    href={home({
-                                        query: viewQuery({
-                                            cargo: option.value,
-                                        }),
-                                    })}
+                                    href={viewHref(
+                                        option.election ?? election.code,
+                                        { cargo: option.value },
+                                    )}
                                     preserveScroll
                                     className={cn(
                                         'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap',
@@ -270,10 +313,9 @@ export default function ResultsIndex({
                                 value={state ?? ''}
                                 onChange={(event) =>
                                     router.visit(
-                                        home({
-                                            query: viewQuery({
-                                                uf: event.target.value.toLowerCase(),
-                                            }),
+                                        viewHref(election.code, {
+                                            uf: event.target.value.toLowerCase(),
+                                            municipio: null,
                                         }),
                                         { preserveScroll: true },
                                     )
@@ -290,27 +332,51 @@ export default function ResultsIndex({
                                 ))}
                             </select>
                         )}
+
+                        {municipality && (
+                            <select
+                                value={municipality.code}
+                                onChange={(event) =>
+                                    router.visit(
+                                        viewHref(election.code, {
+                                            municipio: event.target.value,
+                                        }),
+                                        { preserveScroll: true },
+                                    )
+                                }
+                                aria-label="Município"
+                                className="max-w-56 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                            >
+                                {municipalities.map((option) => (
+                                    <option
+                                        key={option.code}
+                                        value={option.code}
+                                    >
+                                        {option.name}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
                 </header>
 
                 <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-                    {!isNationwide && !state && places.length > 0 ? (
+                    {pickState ? (
                         <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
                             <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
                                 Escolha o estado
                             </h2>
                             <p className="mb-4 text-sm text-zinc-500">
-                                Veja o resultado de {officeLabel} no {round}º
-                                turno.
+                                Veja o resultado de {officeLabel} no{' '}
+                                {election.round}º turno de {election.year}.
                             </p>
                             <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                                 {places.map((place) => (
                                     <li key={place.code}>
                                         <Link
-                                            href={home({
-                                                query: viewQuery({
-                                                    uf: place.code.toLowerCase(),
-                                                }),
+                                            href={viewHref(election.code, {
+                                                uf: place.code.toLowerCase(),
+                                                municipio: null,
                                             })}
                                             className="flex items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-medium text-zinc-800 hover:border-emerald-600 hover:bg-emerald-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/40"
                                         >
@@ -323,10 +389,29 @@ export default function ResultsIndex({
                                 ))}
                             </ul>
                         </section>
+                    ) : pickMunicipality ? (
+                        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                                Escolha o município
+                            </h2>
+                            <p className="mb-4 text-sm text-zinc-500">
+                                Veja o resultado de {officeLabel} em {stateName}{' '}
+                                no {election.round}º turno de {election.year}.
+                            </p>
+                            <MunicipalityPicker
+                                municipalities={municipalities}
+                                href={(code) =>
+                                    viewHref(election.code, {
+                                        municipio: code,
+                                    })
+                                }
+                            />
+                        </section>
                     ) : !summary ? (
                         <div className="rounded-xl border border-dashed border-zinc-300 p-10 text-center text-zinc-500 dark:border-zinc-700">
-                            Ainda não há resultados de {officeLabel}{' '}
-                            sincronizados para o {round}º turno.
+                            {election.status === 'agendada'
+                                ? `A apuração começa em ${formatDate(election.date)}, às 17h.`
+                                : `Ainda não há resultados de ${officeLabel} sincronizados para esta eleição.`}
                         </div>
                     ) : (
                         <>
@@ -347,6 +432,10 @@ export default function ResultsIndex({
                                             {summary.is_final ? (
                                                 <span className="rounded-full bg-zinc-200 px-2 py-0.5 font-medium dark:bg-zinc-800">
                                                     Apuração encerrada
+                                                </span>
+                                            ) : !live ? (
+                                                <span className="rounded-full bg-zinc-200 px-2 py-0.5 font-medium dark:bg-zinc-800">
+                                                    Resultado parcial
                                                 </span>
                                             ) : (
                                                 <span className="flex items-center gap-1.5 font-medium text-red-600">
@@ -403,7 +492,7 @@ export default function ResultsIndex({
                                 </dl>
                             </section>
 
-                            {!proportional && (
+                            {!proportional && !isMunicipal && (
                                 <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                                     <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -518,8 +607,8 @@ export default function ResultsIndex({
 
                 <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-zinc-500">
                     Fonte: Tribunal Superior Eleitoral (resultados.tse.jus.br).
-                    Atualização automática a cada {POLL_INTERVAL / 1000}{' '}
-                    segundos.
+                    {live &&
+                        ` Atualização automática a cada ${POLL_INTERVAL / 1000} segundos.`}
                 </footer>
             </div>
 
@@ -528,13 +617,13 @@ export default function ResultsIndex({
                     winners={celebrated}
                     title={celebrationTitle(
                         officeLabel,
-                        stateName,
+                        placeName ?? undefined,
                         celebrated.length,
                         celebrated.some(
                             ({ winner }) => winner.status === 'mathematical',
                         ),
                     )}
-                    round={round}
+                    round={election.round}
                     onClose={() => setCelebrating(false)}
                 />
             )}

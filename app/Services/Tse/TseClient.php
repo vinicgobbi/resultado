@@ -4,6 +4,7 @@ namespace App\Services\Tse;
 
 use App\Enums\Office;
 use App\Enums\State;
+use App\Models\Election;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\RequestException;
@@ -44,7 +45,6 @@ class TseClient
     public function __construct(
         private readonly string $baseUrl,
         private readonly string $environment,
-        private readonly string $cycle,
         private readonly int $concurrency,
         private readonly int $pauseSeconds = 300,
     ) {}
@@ -54,7 +54,6 @@ class TseClient
         return new self(
             baseUrl: rtrim((string) config('eleicoes.base_url'), '/'),
             environment: (string) config('eleicoes.ambiente'),
-            cycle: (string) config('eleicoes.ciclo'),
             concurrency: max(1, (int) config('eleicoes.concorrencia')),
             pauseSeconds: max(1, (int) config('eleicoes.pausa_429')),
         );
@@ -79,52 +78,60 @@ class TseClient
     }
 
     /**
+     * Index of every election published by the TSE (current cycles only).
+     */
+    public function electionsIndexUrl(): string
+    {
+        return "{$this->baseUrl}/{$this->environment}/comum/config/ele-c.json";
+    }
+
+    /**
      * File listing every state and municipality of an election.
      */
-    public function municipalitiesConfigUrl(int $electionCode): string
+    public function municipalitiesConfigUrl(Election $election): string
     {
-        return $this->url($electionCode, "config/mun-{$this->electionId($electionCode)}-cm.json");
+        return $this->url($election, "config/mun-{$this->electionId($election)}-cm.json");
     }
 
     /**
      * Results of an office for the whole country.
      */
-    public function countryResultUrl(int $electionCode, Office $office): string
+    public function countryResultUrl(Election $election, Office $office): string
     {
-        return $this->url($electionCode, "dados/br/br-c{$office->tseCode()}-{$this->electionId($electionCode)}-u.json");
+        return $this->url($election, "dados/br/br-c{$office->tseCode()}-{$this->electionId($election)}-u.json");
     }
 
     /**
      * Results of an office for one state.
      */
-    public function stateResultUrl(int $electionCode, Office $office, State $state): string
+    public function stateResultUrl(Election $election, Office $office, State $state): string
     {
-        return $this->url($electionCode, "dados/{$state->value}/{$state->value}-c{$office->tseCode($state)}-{$this->electionId($electionCode)}-u.json");
+        return $this->url($election, "dados/{$state->value}/{$state->value}-c{$office->tseCode($state)}-{$this->electionId($election)}-u.json");
     }
 
     /**
      * Results of an office for one municipality.
      */
-    public function municipalityResultUrl(int $electionCode, Office $office, State $state, string $tseCode): string
+    public function municipalityResultUrl(Election $election, Office $office, State $state, string $tseCode): string
     {
-        return $this->url($electionCode, "dados/{$state->value}/{$state->value}{$tseCode}-c{$office->tseCode($state)}-{$this->electionId($electionCode)}-u.json");
+        return $this->url($election, "dados/{$state->value}/{$state->value}{$tseCode}-c{$office->tseCode($state)}-{$this->electionId($election)}-u.json");
     }
 
     /**
      * Official photo of a candidate; the directory is the state of the
      * office, or "br" for president.
      */
-    public function candidatePhotoUrl(int $electionCode, string $directory, string $sequence): string
+    public function candidatePhotoUrl(Election $election, string $directory, string $sequence): string
     {
-        return $this->url($electionCode, "fotos/{$directory}/{$sequence}.jpeg");
+        return $this->url($election, "fotos/{$directory}/{$sequence}.jpeg");
     }
 
     /**
      * Counting progress (and last update time) of every municipality of a state.
      */
-    public function stateProgressUrl(int $electionCode, State $state): string
+    public function stateProgressUrl(Election $election, State $state): string
     {
-        return $this->url($electionCode, "dados/{$state->value}/{$state->value}-{$this->electionId($electionCode)}-ab.json");
+        return $this->url($election, "dados/{$state->value}/{$state->value}-{$this->electionId($election)}-ab.json");
     }
 
     /**
@@ -292,14 +299,14 @@ class TseClient
         throw new RateLimitedException(Carbon::instance($pausedUntil));
     }
 
-    private function url(int $electionCode, string $path): string
+    private function url(Election $election, string $path): string
     {
-        return "{$this->baseUrl}/{$this->environment}/{$this->cycle}/{$electionCode}/{$path}";
+        return "{$this->baseUrl}/{$this->environment}/{$election->cycle}/{$election->tse_code}/{$path}";
     }
 
-    private function electionId(int $electionCode): string
+    private function electionId(Election $election): string
     {
-        return 'e'.str_pad((string) $electionCode, 6, '0', STR_PAD_LEFT);
+        return 'e'.str_pad((string) $election->tse_code, 6, '0', STR_PAD_LEFT);
     }
 
     private function isTransient(Throwable $exception): bool

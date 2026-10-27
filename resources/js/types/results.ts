@@ -12,6 +12,31 @@ export type Candidate = {
 export type OfficeOption = {
     value: string;
     label: string;
+    /** Election holding the office, among the elections of the same day. */
+    election?: number;
+};
+
+export type ElectionStatus = 'agendada' | 'apuracao' | 'concluida' | 'pendente';
+
+export type Election = {
+    code: number;
+    name: string;
+    date: string;
+    year: number;
+    round: number;
+    type: 'federal' | 'estadual' | 'municipal';
+    status: ElectionStatus;
+};
+
+/** Where an office is elected. */
+export type ElectionLevel = 'country' | 'state' | 'municipality';
+
+/** A municipality with results of a municipal office. */
+export type MunicipalityOption = {
+    code: string;
+    name: string;
+    counted_percent: number;
+    is_final: boolean;
 };
 
 /** A state with results of a state office. */
