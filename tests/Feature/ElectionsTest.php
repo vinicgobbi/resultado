@@ -299,3 +299,31 @@ test('a past election is complete even with results the TSE never finalized, and
     expect($result->is_final)->toBeTrue()
         ->and(array_values($result->votes))->toBe([650]);
 });
+
+test('a municipality is only downloaded again when its time in the progress file changes', function () {
+    Http::preventStrayRequests();
+    $this->travelTo('2026-03-01 10:00:00');
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    Election::factory()->municipal2024()->create(['offices' => [Office::Mayor]]);
+    $base = 'https://resultados.tse.jus.br/oficial/ele2024/619/dados/sp';
+    // The progress file has its own time, different from the office's file.
+    $progress = fn (string $time): array => ['abr' => [
+        ['tpabr' => 'mun', 'cdabr' => '71072', 'and' => 'f', 'dt' => '06/10/2024', 'ht' => $time, 's' => ['st' => '100']],
+    ]];
+    Http::fake([
+        "{$base}/sp-e000619-ab.json" => Http::sequence()
+            ->push($progress('22:00:00'))
+            ->push($progress('22:00:00'))
+            ->push($progress('23:30:00')),
+        "{$base}/sp71072-c0011-e000619-u.json" => Http::response(municipalResult(['250000000001' => ['15', 600]], time: '22:05:00')),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+    $downloads = fn (): int => Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'sp71072-'))->count();
+
+    $this->artisan('tse:importar')->assertSuccessful();
+    $this->artisan('tse:importar', ['--eleicao' => [619]])->assertSuccessful();
+    expect($downloads())->toBe(1);
+
+    $this->artisan('tse:importar', ['--eleicao' => [619]])->assertSuccessful();
+    expect($downloads())->toBe(2);
+});

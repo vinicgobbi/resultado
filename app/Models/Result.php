@@ -31,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property list<int>|null $elected_candidate_ids
  * @property bool $is_final
  * @property Carbon|null $tse_updated_at
+ * @property Carbon|null $progress_updated_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'election_code', 'office', 'scope', 'scope_code', 'sections_total', 'sections_counted', 'counted_percent',
     'electorate', 'electorate_counted', 'turnout', 'abstentions', 'valid_votes', 'blank_votes', 'null_votes',
     'votes', 'seats', 'leading_candidate_id', 'elected_candidate_ids', 'is_final', 'tse_updated_at',
+    'progress_updated_at',
 ])]
 class Result extends Model
 {
@@ -61,6 +63,7 @@ class Result extends Model
             'elected_candidate_ids' => 'array',
             'is_final' => 'boolean',
             'tse_updated_at' => 'datetime',
+            'progress_updated_at' => 'datetime',
         ];
     }
 

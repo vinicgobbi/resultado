@@ -339,7 +339,12 @@ class ResultSynchronizer
 
         foreach ($followed as $office) {
             $outdated = $this->outdatedMunicipalities($election, $office, $election->statesFor($office), $progress);
-            $synced += $this->downloadMunicipalities($election, $office, $outdated);
+            $synced += $this->downloadMunicipalities(
+                $election,
+                $office,
+                $outdated,
+                array_map(fn (array $municipality): ?string => $municipality['updated_at'], array_intersect_key($progress, $outdated)),
+            );
         }
 
         return $synced;
@@ -347,8 +352,9 @@ class ResultSynchronizer
 
     /**
      * @param  array<string, State>  $municipalities  TSE code => state
+     * @param  array<string, string|null>  $progressTimes  time of each municipality in the progress file, when followed by it
      */
-    private function downloadMunicipalities(Election $election, Office $office, array $municipalities): int
+    private function downloadMunicipalities(Election $election, Office $office, array $municipalities, array $progressTimes = []): int
     {
         if ($municipalities === []) {
             $this->progress->step("{$office->label()}: municípios em dia", fn (): bool => true);
@@ -390,6 +396,7 @@ class ResultSynchronizer
                 }
 
                 $this->storeResults($election, $office, Result::SCOPE_MUNICIPALITY, $changed);
+                $this->markProgress($election, $office, array_intersect_key($progressTimes, $payloads));
 
                 // Councillors of every municipality add up to hundreds of
                 // thousands of candidates: keep only the ones of this batch.
@@ -448,8 +455,31 @@ class ResultSynchronizer
     }
 
     /**
-     * Municipalities whose stored result of an office is older than what the
-     * TSE reports.
+     * Remember the progress time each downloaded municipality had, changed or
+     * not, so it is only downloaded again when the progress file changes.
+     *
+     * @param  array<string, string|null>  $progressTimes  keyed by TSE code
+     */
+    private function markProgress(Election $election, Office $office, array $progressTimes): void
+    {
+        $byTime = [];
+
+        foreach ($progressTimes as $tseCode => $time) {
+            $byTime[$time ?? ''][] = (string) $tseCode;
+        }
+
+        foreach ($byTime as $time => $tseCodes) {
+            Result::query()
+                ->forElection($election->tse_code, $office, Result::SCOPE_MUNICIPALITY)
+                ->whereIn('scope_code', $tseCodes)
+                ->update(['progress_updated_at' => $time === '' ? null : $time]);
+        }
+    }
+
+    /**
+     * Municipalities whose stored result of an office was downloaded before
+     * the last change the TSE reports for them (the progress file has its own
+     * times, different from the time of each office's file).
      *
      * @param  list<State>  $states
      * @param  array<string, array{state: State, updated_at: string|null, counted: bool}>  $progress
@@ -457,7 +487,7 @@ class ResultSynchronizer
      */
     private function outdatedMunicipalities(Election $election, Office $office, array $states, array $progress): array
     {
-        $storedUpdates = $this->storedUpdates($election->tse_code, $office, Result::SCOPE_MUNICIPALITY);
+        $storedProgress = $this->storedProgress($election->tse_code, $office);
 
         $outdated = [];
 
@@ -468,11 +498,11 @@ class ResultSynchronizer
                 continue;
             }
 
-            if (! $municipality['counted'] && ! array_key_exists($tseCode, $storedUpdates)) {
+            if (! $municipality['counted'] && ! array_key_exists($tseCode, $storedProgress)) {
                 continue;
             }
 
-            if ($this->full || ($storedUpdates[$tseCode] ?? null) !== $municipality['updated_at']) {
+            if ($this->full || ($storedProgress[$tseCode] ?? null) !== $municipality['updated_at']) {
                 $outdated[$tseCode] = $municipality['state'];
             }
         }
@@ -533,16 +563,17 @@ class ResultSynchronizer
     }
 
     /**
-     * Totalization time of the stored results of a scope, keyed by scope code
-     * (numeric codes become integer keys).
+     * Progress time seen when each stored municipality result was downloaded,
+     * keyed by TSE code (numeric codes become integer keys).
      *
      * @return array<array-key, string|null>
      */
-    private function storedUpdates(int $electionCode, Office $office, string $scope): array
+    private function storedProgress(int $electionCode, Office $office): array
     {
         return Result::query()
-            ->forElection($electionCode, $office, $scope)
-            ->pluck('tse_updated_at', 'scope_code')
+            ->forElection($electionCode, $office, Result::SCOPE_MUNICIPALITY)
+            ->toBase()
+            ->pluck('progress_updated_at', 'scope_code')
             ->map(fn (?string $updatedAt): ?string => $updatedAt === null ? null : Carbon::parse($updatedAt)->format('Y-m-d H:i:s'))
             ->all();
     }

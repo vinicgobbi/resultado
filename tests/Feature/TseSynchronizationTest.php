@@ -126,7 +126,7 @@ test('sync only downloads municipalities updated since the last run', function (
     $this->artisan('tse:sincronizar')->assertSuccessful();
     expect(municipalityFileRequests())->toBe(1);
 
-    Result::query()->forElection(6258, Office::President, Result::SCOPE_MUNICIPALITY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    Result::query()->forElection(6258, Office::President, Result::SCOPE_MUNICIPALITY)->update(['progress_updated_at' => '2026-10-25 19:00:00']);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
     expect(municipalityFileRequests())->toBe(2);
