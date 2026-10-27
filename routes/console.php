@@ -21,6 +21,13 @@ Schedule::command('tse:importar')
     ->withoutOverlapping(360)
     ->runInBackground();
 
+// Results the TSE did not finalize after the count may still be
+// retotalized: only what it updated is downloaded.
+Schedule::command('tse:importar --revisar')
+    ->dailyAt('04:30')
+    ->withoutOverlapping(360)
+    ->runInBackground();
+
 // Push notifications are queued by the sync; a short-lived worker started by
 // the scheduler sends them, so no permanent worker process is required.
 Schedule::command('queue:work --stop-when-empty --max-time=60')

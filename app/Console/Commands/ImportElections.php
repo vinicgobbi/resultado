@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Console\ConsoleSyncProgress;
 use App\Models\Election;
+use App\Models\Result;
 use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Console\Attributes\Description;
@@ -12,7 +13,8 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
 #[Signature('tse:importar
-    {--eleicao=* : Códigos do TSE das eleições a importar (padrão: as já encerradas e ainda incompletas)}')]
+    {--eleicao=* : Códigos do TSE das eleições a importar (padrão: as já encerradas e ainda incompletas)}
+    {--revisar : Revisa as eleições concluídas com resultados que o TSE ainda não finalizou}')]
 #[Description('Importa os resultados das eleições já encerradas enquanto o TSE ainda as publica')]
 class ImportElections extends Command
 {
@@ -34,7 +36,14 @@ class ImportElections extends Command
             ->when(
                 $codes === [],
                 fn (Builder $query) => $query
-                    ->whereNull('completed_at')
+                    ->when(
+                        $this->option('revisar'),
+                        // The TSE may still retotalize them, even years later.
+                        fn (Builder $query) => $query
+                            ->whereNotNull('completed_at')
+                            ->whereIn('tse_code', Result::query()->where('is_final', false)->select('election_code')->distinct()),
+                        fn (Builder $query) => $query->whereNull('completed_at'),
+                    )
                     ->whereDate('date', '<', today()->subDays(Election::LIVE_DAYS))
                     ->where(fn (Builder $query) => $query->whereNull('available_until')->orWhereDate('available_until', '>=', today())),
                 fn (Builder $query) => $query->whereIn('tse_code', $codes),

@@ -142,7 +142,11 @@ class ResultSynchronizer
         }
 
         $failures = $this->client->failedRequests() - $failuresBefore;
-        $complete = $this->seen > 0 && $this->allFinal && $failures === 0;
+        // After the count, results the TSE never finalizes (a candidacy under
+        // judgment, a pending retotalization) do not keep the election open:
+        // it is complete once everything published was downloaded, and
+        // tse:importar --revisar keeps checking them.
+        $complete = $this->seen > 0 && $failures === 0 && ($this->allFinal || $election->countIsOver());
 
         $election->forceFill([
             'last_synced_at' => now(),

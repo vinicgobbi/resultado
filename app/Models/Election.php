@@ -139,6 +139,14 @@ class Election extends Model
     }
 
     /**
+     * Whether the days the count is followed live are over.
+     */
+    public function countIsOver(): bool
+    {
+        return $this->date->lt(today()->subDays(self::LIVE_DAYS));
+    }
+
+    /**
      * Data shown on the public pages.
      *
      * @return array{code: int, name: string, date: string, year: int, round: int, type: string, status: string}

@@ -262,8 +262,40 @@ test('candidates of results that did not change are not written again', function
     $written = Candidate::query()->where('tse_sequence', '250000000001')->value('updated_at');
 
     $this->travel(1)->hours();
-    $this->artisan('tse:importar')->assertSuccessful();
+    $this->artisan('tse:importar', ['--eleicao' => [620]])->assertSuccessful();
 
     Http::assertSentCount(2);
     expect(Candidate::query()->where('tse_sequence', '250000000001')->value('updated_at'))->toEqual($written);
+});
+
+test('a past election is complete even with results the TSE never finalized, and is reviewed later', function () {
+    Http::preventStrayRequests();
+    $this->travelTo('2026-03-01 10:00:00');
+    Municipality::create(['tse_code' => '31054', 'ibge_code' => '2800308', 'state' => 'se', 'name' => 'ARACAJU']);
+    $election = Election::factory()->municipal2024()->create(['offices' => [Office::Mayor]]);
+    $base = 'https://resultados.tse.jus.br/oficial/ele2024/619/dados/se';
+    $pending = [...municipalResult(['250000000001' => ['15', 600]]), 'and' => 'p'];
+    Http::fake([
+        "{$base}/se-e000619-ab.json" => Http::sequence()
+            ->push(['abr' => [['tpabr' => 'mun', 'cdabr' => '31054', 'and' => 'p', 'dt' => '06/10/2024', 'ht' => '22:00:00', 's' => ['st' => '100']]]])
+            ->push(['abr' => [['tpabr' => 'mun', 'cdabr' => '31054', 'and' => 'f', 'dt' => '07/05/2026', 'ht' => '13:00:00', 's' => ['st' => '100']]]]),
+        "{$base}/se31054-c0011-e000619-u.json" => Http::sequence()
+            ->push($pending)
+            ->push([...municipalResult(['250000000001' => ['15', 650]]), 'dt' => '07/05/2026', 'ht' => '13:00:00']),
+        'resultados.tse.jus.br/*' => Http::response('', 404),
+    ]);
+
+    $this->artisan('tse:importar')->assertSuccessful();
+
+    expect($election->fresh()->status())->toBe('concluida')
+        ->and(Result::query()->forElection(619, Office::Mayor, Result::SCOPE_MUNICIPALITY)->sole()->is_final)->toBeFalse();
+
+    // The TSE retotalized it.
+    $this->travelTo('2026-05-08 04:30:00');
+    $this->artisan('tse:importar')->expectsOutputToContain('Nenhuma eleição para importar')->assertSuccessful();
+    $this->artisan('tse:importar', ['--revisar' => true])->assertSuccessful();
+
+    $result = Result::query()->forElection(619, Office::Mayor, Result::SCOPE_MUNICIPALITY)->sole();
+    expect($result->is_final)->toBeTrue()
+        ->and(array_values($result->votes))->toBe([650]);
 });
