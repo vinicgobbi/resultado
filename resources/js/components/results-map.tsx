@@ -12,6 +12,7 @@ import type {
     PointerEvent as ReactPointerEvent,
 } from 'react';
 import MunicipalityTable from '@/components/municipality-table';
+import { easeOutCubic, prefersReducedMotion } from '@/lib/animation';
 import { formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { geometry as geometryRoute } from '@/routes/map';
@@ -146,6 +147,7 @@ export default function ResultsMap({
     const live = useRef<ViewBox | null>(null);
     const animationFrame = useRef(0);
     const wheelTimer = useRef(0);
+    const tween = useRef(0);
     const pointers = useRef(new Map<number, { x: number; y: number }>());
     const gesture = useRef<{
         moved: number;
@@ -188,13 +190,18 @@ export default function ResultsMap({
         }
 
         const state = selectedState ? geometry.states[selectedState] : null;
+        const target = state
+            ? padded(state.bbox)
+            : { x: 0, y: 0, w: geometry.width, h: geometry.height };
 
-        live.current = null;
-        setViewBox(
-            state
-                ? padded(state.bbox)
-                : { x: 0, y: 0, w: geometry.width, h: geometry.height },
-        );
+        // The first view is drawn at once; choosing another state flies
+        // there.
+        if (drawn.current) {
+            animateTo(target, 650);
+        } else {
+            live.current = null;
+            setViewBox(target);
+        }
     }, [geometry, selectedState]);
 
     // A new viewBox is drawn: drop the transform that previewed it.
@@ -227,6 +234,7 @@ export default function ResultsMap({
 
     const onWheel = useEffectEvent((event: WheelEvent) => {
         event.preventDefault();
+        cancelAnimationFrame(tween.current);
         setHover(null);
         preview(
             zoomAt(
@@ -254,6 +262,7 @@ export default function ResultsMap({
             frame.removeEventListener('wheel', listener);
             window.clearTimeout(wheelTimer.current);
             cancelAnimationFrame(animationFrame.current);
+            cancelAnimationFrame(tween.current);
         };
     }, [ready]);
 
@@ -374,14 +383,52 @@ export default function ResultsMap({
             : null;
 
         if (box) {
-            live.current = box;
-            setViewBox(box);
+            animateTo(box, 300);
         }
     }
 
     function show(box: ViewBox) {
         live.current = box;
         setViewBox(box);
+    }
+
+    /**
+     * Glide from the current view to another one. Only the drawn map is
+     * moved while it runs; it is drawn again at the end.
+     */
+    function animateTo(box: ViewBox, duration: number) {
+        cancelAnimationFrame(tween.current);
+
+        const from = currentBox();
+
+        if (!from || prefersReducedMotion()) {
+            show(box);
+
+            return;
+        }
+
+        const start = performance.now();
+        const step = (now: number) => {
+            const progress = Math.min((now - start) / duration, 1);
+            const t = easeOutCubic(progress);
+
+            live.current = {
+                x: from.x + (box.x - from.x) * t,
+                y: from.y + (box.y - from.y) * t,
+                w: from.w + (box.w - from.w) * t,
+                h: from.h + (box.h - from.h) * t,
+            };
+            applyTransform();
+
+            if (progress < 1) {
+                tween.current = requestAnimationFrame(step);
+            } else {
+                tween.current = 0;
+                show(box);
+            }
+        };
+
+        tween.current = requestAnimationFrame(step);
     }
 
     /**
@@ -403,17 +450,20 @@ export default function ResultsMap({
         const move = moves[event.key];
 
         if (move) {
-            show({
-                ...box,
-                x: box.x + move[0] * box.w * KEY_PAN,
-                y: box.y + move[1] * box.h * KEY_PAN,
-            });
+            animateTo(
+                {
+                    ...box,
+                    x: box.x + move[0] * box.w * KEY_PAN,
+                    y: box.y + move[1] * box.h * KEY_PAN,
+                },
+                220,
+            );
         } else if (event.key === '+' || event.key === '=') {
             zoomCenter(1 / 1.5);
         } else if (event.key === '-') {
             zoomCenter(1.5);
         } else if (event.key === '0' && fullView) {
-            show(fullView);
+            animateTo(fullView, 450);
         } else {
             return;
         }
@@ -422,6 +472,7 @@ export default function ResultsMap({
     }
 
     function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+        cancelAnimationFrame(tween.current);
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, {
             x: event.clientX,
@@ -596,13 +647,15 @@ export default function ResultsMap({
         return (
             <div>
                 {toggle}
-                <MunicipalityTable
-                    names={geometry.names}
-                    results={results}
-                    candidates={candidates}
-                    selectedState={selectedState}
-                    onSelect={onSelect}
-                />
+                <div className="animate-fade-in">
+                    <MunicipalityTable
+                        names={geometry.names}
+                        results={results}
+                        candidates={candidates}
+                        selectedState={selectedState}
+                        onSelect={onSelect}
+                    />
+                </div>
             </div>
         );
     }
@@ -610,7 +663,7 @@ export default function ResultsMap({
     return (
         <div>
             {toggle}
-            <div className="relative">
+            <div className="relative animate-fade-in">
                 <div
                     ref={frameRef}
                     tabIndex={0}
@@ -701,7 +754,7 @@ export default function ResultsMap({
                             title: restrictToState
                                 ? 'Ver o estado inteiro'
                                 : 'Ver o Brasil inteiro',
-                            action: () => fullView && show(fullView),
+                            action: () => fullView && animateTo(fullView, 450),
                         },
                     ].map((button) => (
                         <button

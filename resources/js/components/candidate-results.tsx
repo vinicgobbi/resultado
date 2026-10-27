@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import AnimatedNumber from '@/components/animated-number';
 import CandidatePhoto from '@/components/candidate-photo';
+import { useFlipList } from '@/lib/animation';
 import { contrastText, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Candidate, CandidateResult, Winner } from '@/types';
@@ -17,7 +19,7 @@ type Props = {
 const PAGE_SIZE = 30;
 
 const badgeClass =
-    'shrink-0 rounded-full bg-success px-2.5 py-0.5 text-xs font-bold text-on-success';
+    'shrink-0 animate-badge-in rounded-full bg-success px-2.5 py-0.5 text-xs font-bold text-on-success';
 
 function winnerLabel(winner: Winner): string {
     return winner.status === 'elected' ? 'Eleito' : 'Matematicamente eleito';
@@ -47,6 +49,9 @@ export default function CandidateResults({
             ? allRows.filter((row) => winnersById.has(row.candidate_id))
             : allRows;
     const rows = proportional ? filtered.slice(0, visible) : filtered;
+    const listRef = useFlipList<HTMLUListElement>(
+        rows.map((row) => row.candidate_id).join(),
+    );
 
     const seatsByParty = [
         ...winners
@@ -116,7 +121,7 @@ export default function CandidateResults({
             ) : (
                 <div
                     aria-hidden="true"
-                    className="flex h-4 overflow-hidden rounded-full bg-track"
+                    className="flex h-4 origin-left animate-grow-x overflow-hidden rounded-full bg-track"
                 >
                     {rows.map((row) => (
                         <div
@@ -133,6 +138,7 @@ export default function CandidateResults({
             )}
 
             <ul
+                ref={listRef}
                 className={cn(
                     'grid gap-3 sm:grid-cols-2',
                     proportional && 'lg:grid-cols-3',
@@ -156,7 +162,12 @@ export default function CandidateResults({
                     return (
                         <li
                             key={candidate.id}
-                            className="relative overflow-hidden rounded-xl border border-line bg-surface p-4"
+                            data-flip-key={candidate.id}
+                            className="relative animate-fade-up overflow-hidden rounded-xl border border-line bg-surface p-4"
+                            style={{
+                                // The first ones arrive one after the other.
+                                animationDelay: `${Math.min(index, 8) * 45}ms`,
+                            }}
                         >
                             <span
                                 className="absolute inset-y-0 left-0 w-1.5"
@@ -212,10 +223,19 @@ export default function CandidateResults({
                                                 : 'text-lg font-semibold text-ink tabular-nums'
                                         }
                                     >
-                                        {formatPercent(row.percent)}
+                                        <AnimatedNumber
+                                            value={row.percent}
+                                            format={formatPercent}
+                                        />
                                     </p>
                                     <p className="text-sm text-muted tabular-nums">
-                                        {formatNumber(row.votes)} votos
+                                        <AnimatedNumber
+                                            value={row.votes}
+                                            format={(value) =>
+                                                formatNumber(Math.round(value))
+                                            }
+                                        />{' '}
+                                        votos
                                     </p>
                                 </div>
                             </div>

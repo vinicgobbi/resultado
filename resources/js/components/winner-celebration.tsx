@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import CandidatePhoto from '@/components/candidate-photo';
-import { createConfetti, prefersReducedMotion } from '@/lib/confetti';
+import { prefersReducedMotion } from '@/lib/animation';
+import { createConfetti } from '@/lib/confetti';
 import { formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Candidate, CandidateResult, Winner } from '@/types';

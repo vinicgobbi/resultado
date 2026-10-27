@@ -1,3 +1,4 @@
+import AnimatedNumber from '@/components/animated-number';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import type { ResultSummary } from '@/types';
 
@@ -21,7 +22,10 @@ export default function CountProgress({ summary, live, updateEvery }: Props) {
                         Andamento da apuração
                     </h2>
                     <p className="text-4xl font-bold tabular-nums">
-                        {formatPercent(summary.counted_percent)}
+                        <AnimatedNumber
+                            value={summary.counted_percent}
+                            format={formatPercent}
+                        />
                     </p>
                     <p className="text-muted">
                         das urnas apuradas
@@ -68,7 +72,7 @@ export default function CountProgress({ summary, live, updateEvery }: Props) {
                 className="h-3 overflow-hidden rounded-full bg-track"
             >
                 <div
-                    className="h-full rounded-full bg-success transition-all duration-700"
+                    className="h-full origin-left animate-grow-x rounded-full bg-success transition-all duration-700"
                     style={{ width: `${summary.counted_percent}%` }}
                 />
             </div>

@@ -76,12 +76,18 @@ export default function ElectionsIndex({ days }: Props) {
                             <ul className="grid gap-4 sm:grid-cols-2">
                                 {days
                                     .filter((day) => day.year === year)
-                                    .map((day) => (
-                                        <li key={day.code}>
+                                    .map((day, index) => (
+                                        <li
+                                            key={day.code}
+                                            className="animate-fade-up"
+                                            style={{
+                                                animationDelay: `${index * 70}ms`,
+                                            }}
+                                        >
                                             <Link
                                                 href={show(day.code)}
                                                 className={cn(
-                                                    'flex h-full flex-col gap-3 rounded-2xl border-2 bg-surface p-5 hover:border-primary hover:bg-primary-soft',
+                                                    'group flex h-full flex-col gap-3 rounded-2xl border-2 bg-surface p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft hover:shadow-lg',
                                                     day.status === 'apuracao'
                                                         ? 'border-live'
                                                         : 'border-line',
@@ -110,7 +116,7 @@ export default function ElectionsIndex({ days }: Props) {
                                                 </span>
                                                 <span
                                                     aria-hidden="true"
-                                                    className="mt-auto font-semibold text-primary"
+                                                    className="mt-auto font-semibold text-primary transition-transform duration-200 group-hover:translate-x-1"
                                                 >
                                                     Ver resultados de{' '}
                                                     {dayLabel(day)} →

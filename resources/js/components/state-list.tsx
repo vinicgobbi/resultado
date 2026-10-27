@@ -30,7 +30,7 @@ export default function StateList({ places, href, current, className }: Props) {
                             place.code === current ? 'page' : undefined
                         }
                         className={cn(
-                            'flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 font-medium hover:border-primary hover:bg-primary-soft',
+                            'flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 font-medium transition-colors hover:border-primary hover:bg-primary-soft',
                             place.code === current
                                 ? 'border-primary bg-primary-soft'
                                 : 'border-line',

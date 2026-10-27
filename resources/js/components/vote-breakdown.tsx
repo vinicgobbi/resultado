@@ -1,3 +1,4 @@
+import AnimatedNumber from '@/components/animated-number';
 import { formatNumber, formatPercent } from '@/lib/format';
 import type { ResultSummary } from '@/types';
 
@@ -57,14 +58,20 @@ export default function VoteBreakdown({ summary }: { summary: ResultSummary }) {
                 Quem votou e como
             </h2>
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map((item) => (
+                {items.map((item, index) => (
                     <div
                         key={item.label}
-                        className="rounded-xl border border-line bg-surface px-4 py-3"
+                        className="animate-fade-up rounded-xl border border-line bg-surface px-4 py-3"
+                        style={{ animationDelay: `${index * 50}ms` }}
                     >
                         <dt className="font-semibold">{item.label}</dt>
                         <dd className="text-2xl font-bold tabular-nums">
-                            {formatNumber(item.value)}
+                            <AnimatedNumber
+                                value={item.value}
+                                format={(value) =>
+                                    formatNumber(Math.round(value))
+                                }
+                            />
                         </dd>
                         <dd className="text-sm text-muted">
                             {item.share && (

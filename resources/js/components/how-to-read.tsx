@@ -47,12 +47,12 @@ export default function HowToRead({ proportional, hasMap }: Props) {
                 Como entender este resultado
                 <span
                     aria-hidden="true"
-                    className="transition-transform group-open:rotate-180"
+                    className="transition-transform duration-300 group-open:rotate-180"
                 >
                     ▾
                 </span>
             </summary>
-            <dl className="space-y-4 border-t border-line px-5 py-4">
+            <dl className="animate-fade-in space-y-4 border-t border-line px-5 py-4">
                 {terms.map(([term, meaning]) => (
                     <div key={term}>
                         <dt className="font-semibold">{term}</dt>

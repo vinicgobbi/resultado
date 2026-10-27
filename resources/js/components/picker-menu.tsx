@@ -66,7 +66,7 @@ export default function PickerMenu({
             <summary
                 aria-controls={panelId}
                 className={cn(
-                    'flex min-h-12 cursor-pointer list-none flex-col justify-center rounded-xl border-2 bg-surface px-4 py-1.5 hover:border-primary [&::-webkit-details-marker]:hidden',
+                    'flex min-h-12 cursor-pointer list-none flex-col justify-center rounded-xl border-2 bg-surface px-4 py-1.5 transition-colors hover:border-primary [&::-webkit-details-marker]:hidden',
                     pending ? 'border-primary' : 'border-line-strong',
                 )}
             >
@@ -75,7 +75,7 @@ export default function PickerMenu({
                     {value}
                     <span
                         aria-hidden="true"
-                        className="text-sm transition-transform group-open:rotate-180"
+                        className="text-sm transition-transform duration-300 group-open:rotate-180"
                     >
                         ▾
                     </span>
@@ -89,7 +89,7 @@ export default function PickerMenu({
                     }
                 }}
                 className={cn(
-                    'z-30 max-h-[70vh] overflow-y-auto rounded-xl border border-line bg-surface p-3 shadow-xl',
+                    'z-30 max-h-[70vh] origin-top animate-menu-in overflow-y-auto rounded-xl border border-line bg-surface p-3 shadow-xl',
                     // Small screens: the whole width, wherever the button is.
                     'max-sm:fixed max-sm:inset-x-4 max-sm:top-24',
                     'sm:absolute sm:top-full sm:left-0 sm:mt-2',

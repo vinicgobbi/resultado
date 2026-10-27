@@ -258,7 +258,10 @@ export default function ResultsIndex({
 
             <div className="min-h-screen bg-canvas text-ink">
                 <header className="border-b border-line bg-surface">
-                    <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pt-4">
+                    <div
+                        className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 pt-4"
+                        style={{ viewTransitionName: 'site-header' }}
+                    >
                         <Link
                             href={electionsIndex()}
                             className="flex items-center gap-3 rounded-lg"
@@ -391,12 +394,24 @@ export default function ResultsIndex({
                                                     : undefined
                                             }
                                             className={cn(
-                                                'flex min-h-11 items-center rounded-xl border-2 px-4 font-semibold whitespace-nowrap',
+                                                'relative isolate flex min-h-11 items-center rounded-xl border-2 px-4 font-semibold whitespace-nowrap transition-colors',
                                                 option.value === office
-                                                    ? 'border-primary bg-primary text-on-primary'
+                                                    ? 'border-primary text-on-primary'
                                                     : 'border-line-strong hover:border-primary hover:bg-primary-soft',
                                             )}
                                         >
+                                            {option.value === office && (
+                                                // Slides to the new tab when
+                                                // the office changes.
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="absolute -inset-0.5 -z-10 rounded-xl bg-primary"
+                                                    style={{
+                                                        viewTransitionName:
+                                                            'chosen-office',
+                                                    }}
+                                                />
+                                            )}
                                             {option.label}
                                         </Link>
                                     </li>
