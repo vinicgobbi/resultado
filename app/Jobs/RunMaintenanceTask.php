@@ -27,7 +27,7 @@ class RunMaintenanceTask implements ShouldQueue
 
     public function __construct(public MaintenanceRun $run)
     {
-        $this->onQueue('admin');
+        $this->onConnection('database-admin')->onQueue('admin');
     }
 
     /**

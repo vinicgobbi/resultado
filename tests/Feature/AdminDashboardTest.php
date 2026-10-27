@@ -61,6 +61,15 @@ test('admins queue a task on its own queue', function () {
     Queue::assertPushedOn('admin', RunMaintenanceTask::class);
 });
 
+test('a long task is never taken again by another worker while it runs', function () {
+    $job = new RunMaintenanceTask(MaintenanceRun::factory()->create());
+
+    // A database queue hands a job out again after retry_after: it must
+    // outlast the job, or a long task fails as "attempted too many times".
+    expect(config("queue.connections.{$job->connection}.retry_after"))->toBeGreaterThan($job->timeout)
+        ->and($job->queue)->toBe('admin');
+});
+
 test('a task cannot be queued twice, nor a full sync without an election', function () {
     Queue::fake();
     MaintenanceRun::factory()->running()->create(['task' => MaintenanceTask::Photos]);

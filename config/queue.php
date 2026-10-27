@@ -44,6 +44,18 @@ return [
             'after_commit' => false,
         ],
 
+        // Tasks started from the admin dashboard can run for an hour: a job
+        // is only taken again after retry_after, which must be longer than
+        // the job timeout (RunMaintenanceTask::$timeout).
+        'database-admin' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'admin',
+            'retry_after' => 3900,
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
