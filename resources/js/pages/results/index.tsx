@@ -8,6 +8,7 @@ import MunicipalityPicker from '@/components/municipality-picker';
 import NotificationToggle from '@/components/notification-toggle';
 import PickerMenu from '@/components/picker-menu';
 import ResultsMap from '@/components/results-map';
+import RunoffNotice from '@/components/runoff-notice';
 import SkipLink from '@/components/skip-link';
 import StateList from '@/components/state-list';
 import StatesTable from '@/components/states-table';
@@ -492,6 +493,12 @@ export default function ResultsIndex({
                                     live={live}
                                     updateEvery={POLL_INTERVAL / 1000}
                                 />
+                                {summary.runoff && (
+                                    <RunoffNotice
+                                        runoff={summary.runoff}
+                                        candidates={candidatesById}
+                                    />
+                                )}
                                 <div className="space-y-3">
                                     <div>
                                         <h2 className="text-xl font-bold">
@@ -508,6 +515,7 @@ export default function ResultsIndex({
                                         results={summary.results}
                                         candidates={candidatesById}
                                         winners={winners}
+                                        runoff={summary.runoff}
                                         proportional={proportional}
                                         onCelebrate={
                                             celebrateWinners

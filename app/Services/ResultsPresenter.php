@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\Office;
 use App\Enums\State;
 use App\Models\Candidate;
+use App\Models\Election;
 use App\Models\Municipality;
 use App\Models\Result;
 use App\Services\Tse\ResultSynchronizer;
@@ -21,7 +22,8 @@ use Illuminate\Support\Facades\Cache;
  * @phpstan-type Place array{code: string, name: string, counted_percent: float, is_final: bool}
  * @phpstan-type MapEntry array{0: int|null, 1: float, 2: float}
  * @phpstan-type Winner array{candidate_id: int, status: 'elected'|'mathematical'}
- * @phpstan-type Summary array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, seats: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>, winners: list<Winner>}
+ * @phpstan-type Runoff array{status: 'confirmed'|'mathematical', candidate_ids: list<int>}
+ * @phpstan-type Summary array{counted_percent: float, sections_total: int, sections_counted: int, electorate: int, turnout: int, abstentions: int, valid_votes: int, blank_votes: int, null_votes: int, seats: int, is_final: bool, leader_id: int|null, updated_at: string|null, results: list<CandidateVotes>, winners: list<Winner>, runoff: Runoff|null}
  */
 class ResultsPresenter
 {
@@ -179,7 +181,17 @@ class ResultsPresenter
         return $this->remember($electionCode, "{$office->value}.resumo.{$scopeCode}", function () use ($electionCode, $office, $scope, $scopeCode): ?array {
             $result = Result::query()->forElection($electionCode, $office, $scope)->where('scope_code', $scopeCode)->first();
 
-            return $result === null ? null : [...$this->format($result), 'winners' => $this->winners($result, $office)];
+            if ($result === null) {
+                return null;
+            }
+
+            $isFirstRound = Election::query()->where('tse_code', $electionCode)->value('round') === 1;
+
+            return [
+                ...$this->format($result),
+                'winners' => $this->winners($result, $office),
+                'runoff' => $isFirstRound ? $this->runoff($result, $office) : null,
+            ];
         });
     }
 
@@ -352,11 +364,7 @@ class ResultsPresenter
         }
 
         $votes = $result->sortedVotes();
-        // Voters in counted sections; turnout + abstentions is the same up to
-        // the few sections that were never installed (a safe overestimate of
-        // the voters left), and does not depend on a newer column.
-        $counted = (int) $result->electorate_counted ?: $result->turnout + $result->abstentions;
-        $votersLeft = max($result->electorate - $counted, 0);
+        $votersLeft = $this->votersLeft($result);
         $status = $result->is_final ? 'elected' : 'mathematical';
 
         if ($office->requiresMajority($result->electorate)) {
@@ -378,6 +386,59 @@ class ResultsPresenter
         }
 
         return $winners;
+    }
+
+    /**
+     * Who goes to the runoff, once there is sure to be one: in the first
+     * round of an office elected by majority, when not even the leader could
+     * reach more than half of the valid votes with every voter left.
+     *
+     * A candidate is sure of a place when the two closest rivals could not
+     * both pass them with the voters left; a tie is not sure. Once the count
+     * is final, the first two are confirmed.
+     *
+     * @return Runoff|null
+     */
+    private function runoff(Result $result, Office $office): ?array
+    {
+        if (! $office->requiresMajority($result->electorate) || ! empty($result->elected_candidate_ids) || $result->sections_counted === 0) {
+            return null;
+        }
+
+        $votes = $result->sortedVotes();
+        $votersLeft = $this->votersLeft($result);
+        $validVotes = max($result->valid_votes, array_sum($votes));
+        $leaderVotes = reset($votes) ?: 0;
+
+        if (2 * ($leaderVotes + $votersLeft) > $validVotes + $votersLeft) {
+            return null;
+        }
+
+        $qualified = [];
+
+        foreach (array_slice($votes, 0, 2, preserve_keys: true) as $candidateId => $count) {
+            $rivals = array_slice(array_values(array_diff_key($votes, [$candidateId => true])), 0, 2);
+            $votesToPass = array_sum(array_map(fn (int $rival): int => max($count - $rival, 0), $rivals));
+
+            if (count($rivals) < 2 || $votesToPass > $votersLeft) {
+                $qualified[] = (int) $candidateId;
+            }
+        }
+
+        return ['status' => $result->is_final ? 'confirmed' : 'mathematical', 'candidate_ids' => $qualified];
+    }
+
+    /**
+     * Voters still to be counted, as if every one of them voted validly.
+     * Voters in counted sections are turnout + abstentions up to the few
+     * sections that were never installed (a safe overestimate of the voters
+     * left), when the TSE did not send them.
+     */
+    private function votersLeft(Result $result): int
+    {
+        $counted = (int) $result->electorate_counted ?: $result->turnout + $result->abstentions;
+
+        return max($result->electorate - $counted, 0);
     }
 
     /**

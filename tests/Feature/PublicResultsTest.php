@@ -209,6 +209,53 @@ test('winners are celebrated only in the latest election, until a week after its
     $this->get(route('elections.show', 6258))->assertInertia(fn (Assert $page) => $page->where('celebrateWinners', false));
 });
 
+test('a runoff is certain once not even the leader can reach a majority, with both places decided', function () {
+    [$first, $second, $third] = Candidate::factory()->count(3)->create();
+    // 1000 valid votes and 100 voters left: 2 × (450 + 100) is not more than 1000 + 100.
+    storeCountry([$first->id => 450, $second->id => 400, $third->id => 150], ['election_code' => 6257]);
+
+    $this->get(route('elections.show', 6257))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.winners', [])
+        ->where('summary.runoff', ['status' => 'mathematical', 'candidate_ids' => [$first->id, $second->id]]));
+});
+
+test('the second place of a certain runoff stays open while the third can still pass', function () {
+    [$first, $second, $third] = Candidate::factory()->count(3)->create();
+    // The second leads the third by 20 votes with 100 voters left.
+    storeCountry([$first->id => 440, $second->id => 290, $third->id => 270], ['election_code' => 6257]);
+
+    $this->get(route('elections.show', 6257))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.runoff', ['status' => 'mathematical', 'candidate_ids' => [$first->id]]));
+});
+
+test('a runoff is not certain while the leader can still reach a majority', function () {
+    [$first, $second] = Candidate::factory()->count(2)->create();
+    storeCountry([$first->id => 520, $second->id => 480], ['election_code' => 6257]);
+
+    $this->get(route('elections.show', 6257))->assertInertia(fn (Assert $page) => $page->where('summary.runoff', null));
+});
+
+test('the final count confirms the first two in the runoff', function () {
+    [$first, $second, $third] = Candidate::factory()->count(3)->create();
+    storeCountry([$first->id => 450, $second->id => 400, $third->id => 150], [
+        'election_code' => 6257,
+        'electorate_counted' => 1200,
+        'sections_counted' => 100,
+        'counted_percent' => 100,
+        'is_final' => true,
+    ]);
+
+    $this->get(route('elections.show', 6257))->assertInertia(fn (Assert $page) => $page
+        ->where('summary.runoff', ['status' => 'confirmed', 'candidate_ids' => [$first->id, $second->id]]));
+});
+
+test('the second round has no runoff', function () {
+    [$first, $second, $third] = Candidate::factory()->count(3)->create();
+    storeCountry([$first->id => 450, $second->id => 400, $third->id => 150]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('summary.runoff', null));
+});
+
 test('the voters left fall back to turnout and abstentions', function () {
     [$leader, $other] = Candidate::factory()->count(2)->create();
     // Synced before electorate_counted existed: 1100 voters counted (1000 + 100).

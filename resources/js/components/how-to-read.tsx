@@ -23,6 +23,10 @@ export default function HowToRead({ proportional, hasMap }: Props) {
             'Mesmo que todos os votos que ainda faltam apurar fossem para os adversários, o resultado não mudaria mais. O TSE ainda vai confirmar.',
         ],
         ['Eleito', 'O TSE já confirmou o resultado.'],
+        [
+            'Garantido no 2º turno',
+            'Já é certo que haverá 2º turno e que o candidato vai disputá-lo: mesmo com os votos que faltam apurar, ninguém passa da metade dos votos válidos e os adversários não conseguem mais tirá-lo dos dois primeiros lugares.',
+        ],
         proportional
             ? [
                   'Como as vagas são divididas',

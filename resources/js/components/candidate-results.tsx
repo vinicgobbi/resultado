@@ -4,12 +4,14 @@ import CandidatePhoto from '@/components/candidate-photo';
 import { useFlipList } from '@/lib/animation';
 import { contrastText, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Candidate, CandidateResult, Winner } from '@/types';
+import type { Candidate, CandidateResult, Runoff, Winner } from '@/types';
 
 type Props = {
     results: CandidateResult[];
     candidates: Map<number, Candidate>;
     winners: Winner[];
+    /** A runoff sure to happen: its candidates get a badge. */
+    runoff?: Runoff | null;
     /** Deputies: hundreds of candidates, seats split by party. */
     proportional?: boolean;
     /** Shows the celebration again; without it the badge is only a label. */
@@ -29,6 +31,7 @@ export default function CandidateResults({
     results,
     candidates,
     winners,
+    runoff = null,
     proportional = false,
     onCelebrate,
 }: Props) {
@@ -147,6 +150,9 @@ export default function CandidateResults({
                 {rows.map((row, index) => {
                     const candidate = row.candidate!;
                     const winner = winnersById.get(candidate.id);
+                    const inRunoff = runoff?.candidate_ids.includes(
+                        candidate.id,
+                    );
                     const numberBadge = (
                         <span
                             className="flex size-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold tabular-nums"
@@ -209,6 +215,13 @@ export default function CandidateResults({
                                                     {winnerLabel(winner)}
                                                 </span>
                                             ))}
+                                        {inRunoff && (
+                                            <span className="shrink-0 animate-badge-in rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold text-on-primary">
+                                                {runoff!.status === 'confirmed'
+                                                    ? 'Vai ao 2º turno'
+                                                    : 'Garantido no 2º turno'}
+                                            </span>
+                                        )}
                                     </p>
                                     <p className="mt-0.5 text-sm text-muted">
                                         {candidate.party} · número{' '}

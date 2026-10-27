@@ -58,6 +58,17 @@ export type Place = {
     is_final: boolean;
 };
 
+/**
+ * A runoff that is sure to happen, in the first round of an office elected
+ * by majority.
+ */
+export type Runoff = {
+    /** confirmed: the count is final; mathematical: can no longer change. */
+    status: 'confirmed' | 'mathematical';
+    /** Candidates already sure of a place (up to two). */
+    candidate_ids: number[];
+};
+
 export type Winner = {
     candidate_id: number;
     /** elected: declared by the TSE; mathematical: can no longer be caught. */
@@ -87,6 +98,8 @@ export type ResultSummary = {
     results: CandidateResult[];
     /** Only in the summary of the place where the office is elected. */
     winners?: Winner[];
+    /** Only in the summary of the place where the office is elected. */
+    runoff?: Runoff | null;
 };
 
 export type StateResult = ResultSummary & {
