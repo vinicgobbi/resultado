@@ -27,3 +27,18 @@ test('users can log out', function () {
 
     $this->assertGuest();
 });
+
+test('guessing the password of an account is slowed down even from many addresses', function () {
+    $user = User::factory()->create();
+    $attempt = fn (string $ip) => $this->withServerVariables(['REMOTE_ADDR' => $ip])
+        ->post(route('login.store'), ['email' => $user->email, 'password' => 'errada']);
+
+    foreach (range(1, 10) as $index) {
+        $attempt("10.0.0.{$index}")->assertSessionHasErrors('email');
+    }
+
+    $attempt('10.0.1.1')->assertTooManyRequests();
+    $this->withServerVariables(['REMOTE_ADDR' => '10.0.1.1'])
+        ->post(route('login.store'), ['email' => 'outra@example.com', 'password' => 'errada'])
+        ->assertSessionHasErrors('email');
+});
