@@ -44,8 +44,16 @@ class CandidatePhotos
     }
 
     /**
+     * How long a "not found" holds: the TSE may still publish a photo during
+     * the count, hardly after the election is over.
+     */
+    private const int MISSING_DAYS = 1;
+
+    private const int MISSING_DAYS_AFTER_ELECTION = 30;
+
+    /**
      * Download the photos not stored yet. Only a "not found" marks a photo as
-     * missing (for a day); other failures are retried on the next call.
+     * missing (for a while); other failures are retried on the next call.
      *
      * @param  iterable<Candidate>  $candidates
      * @return array{downloaded: int, missing: int, failed: int}
@@ -78,7 +86,8 @@ class CandidatePhotos
             if ($photo === false) {
                 $totals['failed']++;
             } elseif ($photo === null || ! str_starts_with($photo, "\xFF\xD8")) {
-                Cache::put(self::missingKey($candidate), true, now()->addDay());
+                $over = $candidate->election?->completed_at !== null;
+                Cache::put(self::missingKey($candidate), true, now()->addDays($over ? self::MISSING_DAYS_AFTER_ELECTION : self::MISSING_DAYS));
                 $totals['missing']++;
             } else {
                 Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($candidate->tse_sequence), $photo);

@@ -10,6 +10,7 @@ use App\Models\Municipality;
 use App\Models\PushMessage;
 use App\Models\PushSubscription;
 use App\Models\Result;
+use App\Services\Tse\CandidatePhotos;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\Tse\TseClient;
 use App\Services\WebPush;
@@ -583,6 +584,25 @@ test('an election with failed downloads is not complete', function () {
     $this->artisan('tse:sincronizar', ['--sem-notificacao' => true])->assertSuccessful();
 
     expect(Election::query()->where('tse_code', 6258)->sole()->completed_at)->toBeNull();
+});
+
+test('a photo missing from an election that is over is not requested again for a month', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Http::fake(['resultados.tse.jus.br/*' => Http::response('', 404)]);
+    $this->travelTo('2026-11-10 12:00:00');
+    Election::factory()->municipal2024()->completed()->create();
+    $councillor = Candidate::factory()->running(Office::Councillor, State::SaoPaulo, '71072')->create();
+    $photos = app(CandidatePhotos::class);
+
+    $photos->download([$councillor]);
+    $this->travel(29)->days();
+
+    expect($photos->isMissing($councillor))->toBeTrue();
+
+    $this->travel(2)->days();
+
+    expect($photos->isMissing($councillor))->toBeFalse();
 });
 
 test('a photo blocked by a 429 is retried later instead of marked as missing', function () {
