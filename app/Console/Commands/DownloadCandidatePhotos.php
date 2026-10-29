@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\Office;
 use App\Models\Candidate;
 use App\Models\Election;
+use App\Services\DeployedRelease;
 use App\Services\Tse\CandidatePhotos;
 use App\Services\Tse\RateLimitedException;
 use Carbon\CarbonImmutable;
@@ -62,15 +63,21 @@ class DownloadCandidatePhotos extends Command
 
     private const string OUT_OF_TIME = 'sem-tempo';
 
+    private const string NEW_RELEASE = 'nova-versao';
+
     private ?CarbonImmutable $deadline = null;
+
+    private DeployedRelease $release;
 
     /**
      * Execute the console command. Where it stopped is kept, so the next run
      * with the same options continues from there instead of checking every
      * candidate again.
      */
-    public function handle(CandidatePhotos $photos): int
+    public function handle(CandidatePhotos $photos, DeployedRelease $release): int
     {
+        $this->release = $release;
+
         $offices = array_map(fn (?string $value): ?Office => $value === null ? null : Office::tryFrom($value), $this->option('cargo'));
 
         if (in_array(null, $offices, true)) {
@@ -197,7 +204,9 @@ class DownloadCandidatePhotos extends Command
         // and starting again by itself would only repeat it.
         $stalled = $outcome === self::OUT_OF_TIME && $bar->getProgress() === $checked;
 
-        if ($stalled) {
+        if ($outcome === self::NEW_RELEASE) {
+            $this->components->info('Uma nova versão do site foi publicada: a tarefa para aqui e continua nela, de onde parou.');
+        } elseif ($stalled) {
             $this->components->warn("Nenhum candidato verificado em {$minutes} minutos: o TSE bloqueou os pedidos o tempo todo. Rode de novo mais tarde; ela continua de onde parou.");
         } elseif ($outcome === self::OUT_OF_TIME) {
             $this->components->info("Parou depois de {$minutes} minutos, para não passar do tempo limite. A próxima execução continua de onde parou.");
@@ -212,7 +221,7 @@ class DownloadCandidatePhotos extends Command
 
         return match (true) {
             $stalled => self::FAILURE,
-            $outcome === self::OUT_OF_TIME => self::INCOMPLETE,
+            $outcome === self::OUT_OF_TIME, $outcome === self::NEW_RELEASE => self::INCOMPLETE,
             $outcome === self::STOPPED && $this->option('sem-espera'), $totals['failed'] > 0 => self::FAILURE,
             default => self::SUCCESS,
         };
@@ -252,13 +261,18 @@ class DownloadCandidatePhotos extends Command
      *
      * @param  SupportCollection<int, Candidate>  $batch
      * @param  array{downloaded: int, missing: int, failed: int}  $totals
-     * @return self::DONE|self::STOPPED|self::OUT_OF_TIME
+     * @return self::DONE|self::STOPPED|self::OUT_OF_TIME|self::NEW_RELEASE
      */
     private function downloadBatch(CandidatePhotos $photos, SupportCollection $batch, array &$totals): string
     {
         while (true) {
             if ($this->deadline?->isPast()) {
                 return self::OUT_OF_TIME;
+            }
+
+            // The files of this release are removed a few deploys later.
+            if ($this->release->isOutdated()) {
+                return self::NEW_RELEASE;
             }
 
             // The counting of a new election needs the TSE more than the past.

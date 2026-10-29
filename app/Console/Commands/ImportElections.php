@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Console\ConsoleSyncProgress;
 use App\Models\Election;
 use App\Models\Result;
+use App\Services\DeployedRelease;
 use App\Services\Tse\RateLimitedException;
 use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Console\Attributes\Description;
@@ -22,7 +23,7 @@ class ImportElections extends Command
      * Execute the console command. An import interrupted by a 429 resumes
      * on the next run from what is missing.
      */
-    public function handle(ResultSynchronizer $synchronizer): int
+    public function handle(ResultSynchronizer $synchronizer, DeployedRelease $release): int
     {
         $codes = array_map(intval(...), $this->option('eleicao'));
 
@@ -61,6 +62,13 @@ class ImportElections extends Command
         $progress = new ConsoleSyncProgress($this);
 
         foreach ($elections as $election) {
+            // The files of this release are removed a few deploys later.
+            if ($release->isOutdated()) {
+                $this->components->info('Uma nova versão do site foi publicada; a importação continua na próxima execução.');
+
+                return self::SUCCESS;
+            }
+
             $progress->heading($election);
             $started = microtime(true);
 
