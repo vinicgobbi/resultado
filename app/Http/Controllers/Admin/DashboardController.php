@@ -122,7 +122,7 @@ class DashboardController extends Controller
      */
     private function mostFollowed(): array
     {
-        return PushFollow::query()
+        return array_values(PushFollow::query()
             ->groupBy('office', 'scope_code')
             ->selectRaw('office, scope_code, count(*) as followers')
             ->orderByDesc('followers')
@@ -136,6 +136,6 @@ class DashboardController extends Controller
                 'label' => (new ResultPlace($follow->office, $follow->scope_code))->label(),
                 'followers' => (int) $follow->getAttribute('followers'),
             ])
-            ->all();
+            ->all());
     }
 }

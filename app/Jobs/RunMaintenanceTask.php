@@ -59,7 +59,12 @@ class RunMaintenanceTask implements ShouldQueue
 
         try {
             $exitCode = Artisan::call($command, [...$arguments, '--no-interaction' => true], $output);
-        } catch (MaintenanceRunCancelled) {
+        } catch (Throwable $exception) {
+            // Thrown by the output, which Artisan::call does not declare.
+            if (! $exception instanceof MaintenanceRunCancelled) {
+                throw $exception;
+            }
+
             $output->writeln("\nTarefa cancelada pelo painel.");
             $exitCode = null;
         }

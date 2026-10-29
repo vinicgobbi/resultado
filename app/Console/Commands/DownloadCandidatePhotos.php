@@ -243,11 +243,11 @@ class DownloadCandidatePhotos extends Command
     /**
      * Download a batch, waiting out a 429 unless asked not to.
      *
-     * @param  Collection<int, Candidate>  $batch
+     * @param  SupportCollection<int, Candidate>  $batch
      * @param  array{downloaded: int, missing: int, failed: int}  $totals
      * @return self::DONE|self::STOPPED|self::OUT_OF_TIME
      */
-    private function downloadBatch(CandidatePhotos $photos, Collection $batch, array &$totals): string
+    private function downloadBatch(CandidatePhotos $photos, SupportCollection $batch, array &$totals): string
     {
         while (true) {
             if ($this->deadline?->isPast()) {
@@ -295,10 +295,13 @@ class DownloadCandidatePhotos extends Command
      */
     private function waitUntil(CarbonInterface $until): void
     {
-        while (now()->lessThan($until)) {
-            Sleep::for(min(self::WAIT_STEP_SECONDS, max(1, (int) ceil(now()->diffInSeconds($until)))))->seconds();
+        $remaining = (int) ceil(now()->diffInSeconds($until));
 
-            if (now()->lessThan($until)) {
+        while ($remaining > 0) {
+            Sleep::for(min(self::WAIT_STEP_SECONDS, $remaining))->seconds();
+            $remaining = (int) ceil(now()->diffInSeconds($until));
+
+            if ($remaining > 0) {
                 $this->line(' Aguardando o TSE até '.$until->format('H:i').'...');
             }
         }
