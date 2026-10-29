@@ -2,6 +2,8 @@
 
 use App\Console\RunOutput;
 use App\Enums\MaintenanceTask;
+use App\Enums\Office;
+use App\Enums\State;
 use App\Exceptions\MaintenanceRunCancelled;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Jobs\RunMaintenanceTask;
@@ -155,10 +157,10 @@ test('a finished task cannot be cancelled', function () {
 
 test('admins retry or clear the failed jobs', function () {
     Queue::fake();
-    $failJob = fn () => DB::table('failed_jobs')->insert([
+    $failJob = fn (string $queue = 'default') => DB::table('failed_jobs')->insert([
         'uuid' => (string) Str::uuid(),
         'connection' => 'database',
-        'queue' => 'default',
+        'queue' => $queue,
         'payload' => json_encode(['uuid' => (string) Str::uuid(), 'displayName' => 'Job', 'job' => 'Job', 'data' => []]),
         'exception' => 'RuntimeException: falhou',
         'failed_at' => now(),
@@ -166,12 +168,13 @@ test('admins retry or clear the failed jobs', function () {
     $admin = User::factory()->create();
 
     $failJob();
+    $failJob(RunMaintenanceTask::QUEUE);
     $this->actingAs($admin)
         ->post(route('admin.failed-jobs.retry'))
-        ->assertSessionHas('success', '1 job voltou para a fila.');
-    expect(DB::table('failed_jobs')->count())->toBe(0);
+        ->assertSessionHas('success', '1 job voltou para a fila. 1 tarefa do painel ficou de fora: inicie-a de novo em "Tarefas".');
+    // The task of the dashboard stays failed, until cleared.
+    expect(DB::table('failed_jobs')->pluck('queue')->all())->toBe([RunMaintenanceTask::QUEUE]);
 
-    $failJob();
     $failJob();
     $this->actingAs($admin)
         ->delete(route('admin.failed-jobs.destroy'))
@@ -184,7 +187,11 @@ test('a photo task that reached its time limit is queued again to continue', fun
     Storage::fake(Candidate::PHOTO_DISK);
     Sleep::fake(syncWithCarbon: true);
     Candidate::factory()->create();
-    Http::fake(['*' => Http::response('', 429)]);
+    Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    Http::fake([
+        '*/fotos/br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg"),
+        '*/fotos/sp/*' => Http::response('', 429),
+    ]);
     $run = MaintenanceRun::factory()->create(['task' => MaintenanceTask::Photos]);
 
     (new RunMaintenanceTask($run))->handle();
@@ -195,6 +202,23 @@ test('a photo task that reached its time limit is queued again to continue', fun
     $next = MaintenanceRun::query()->whereKeyNot($run->id)->sole();
     expect($next)->task->toBe(MaintenanceTask::Photos)->status->toBe(MaintenanceRun::QUEUED);
     Queue::assertPushed(RunMaintenanceTask::class, fn (RunMaintenanceTask $job): bool => $job->run->is($next));
+});
+
+test('a photo task blocked by the TSE the whole time is not queued again', function () {
+    Queue::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Sleep::fake(syncWithCarbon: true);
+    Candidate::factory()->create();
+    Http::fake(['*' => Http::response('', 429)]);
+    $run = MaintenanceRun::factory()->create(['task' => MaintenanceTask::Photos]);
+
+    (new RunMaintenanceTask($run))->handle();
+
+    expect($run->refresh())
+        ->status->toBe(MaintenanceRun::FAILED)
+        ->output->toContain('Nenhum candidato verificado')
+        ->and(MaintenanceRun::query()->count())->toBe(1);
+    Queue::assertNothingPushed();
 });
 
 test('the dashboard poll only computes the props it asks for', function () {

@@ -32,11 +32,16 @@ class RunMaintenanceTask implements ShouldQueue
      */
     public const int TIME_LIMIT_MINUTES = 230;
 
+    /**
+     * Queue of the dashboard tasks, worked apart from the notifications.
+     */
+    public const string QUEUE = 'admin';
+
     public int $tries = 1;
 
     public function __construct(public MaintenanceRun $run)
     {
-        $this->onConnection('database-admin')->onQueue('admin');
+        $this->onConnection('database-admin')->onQueue(self::QUEUE);
     }
 
     /**

@@ -193,7 +193,13 @@ class DownloadCandidatePhotos extends Command
             return self::SUCCESS;
         }
 
-        if ($outcome === self::OUT_OF_TIME) {
+        // Out of time without checking anyone: the TSE blocked the whole run,
+        // and starting again by itself would only repeat it.
+        $stalled = $outcome === self::OUT_OF_TIME && $bar->getProgress() === $checked;
+
+        if ($stalled) {
+            $this->components->warn("Nenhum candidato verificado em {$minutes} minutos: o TSE bloqueou os pedidos o tempo todo. Rode de novo mais tarde; ela continua de onde parou.");
+        } elseif ($outcome === self::OUT_OF_TIME) {
             $this->components->info("Parou depois de {$minutes} minutos, para não passar do tempo limite. A próxima execução continua de onde parou.");
         }
 
@@ -205,6 +211,7 @@ class DownloadCandidatePhotos extends Command
         ));
 
         return match (true) {
+            $stalled => self::FAILURE,
             $outcome === self::OUT_OF_TIME => self::INCOMPLETE,
             $outcome === self::STOPPED && $this->option('sem-espera'), $totals['failed'] > 0 => self::FAILURE,
             default => self::SUCCESS,

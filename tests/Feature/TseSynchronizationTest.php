@@ -736,11 +736,27 @@ test('the photos command stops at the time limit instead of waiting past it', fu
     Storage::fake(Candidate::PHOTO_DISK);
     Sleep::fake(syncWithCarbon: true);
     Candidate::factory()->create();
-    Http::fake(['*' => Http::response('', 429)]);
+    Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    Http::fake([
+        '*/fotos/br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg"),
+        '*/fotos/sp/*' => Http::response('', 429),
+    ]);
 
     $this->artisan('tse:fotos', ['--minutos' => 2])
         ->expectsOutputToContain('Parou depois de 2 minutos')
         ->assertExitCode(DownloadCandidatePhotos::INCOMPLETE);
 
     Sleep::assertNeverSlept();
+});
+
+test('the photos command fails instead of continuing when the TSE blocked the whole run', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Sleep::fake(syncWithCarbon: true);
+    Candidate::factory()->create();
+    Http::fake(['*' => Http::response('', 429)]);
+
+    $this->artisan('tse:fotos', ['--minutos' => 2])
+        ->expectsOutputToContain('Nenhum candidato verificado em 2 minutos')
+        ->assertFailed();
 });
