@@ -17,11 +17,6 @@ use Inertia\Response as InertiaResponse;
 class PushFollowController extends Controller
 {
     /**
-     * Messages older than this are no longer news.
-     */
-    private const int MESSAGE_MINUTES = 60;
-
-    /**
      * Page listing what this browser follows (loaded by the page itself: the
      * browser is only known by its push subscription).
      */
@@ -111,7 +106,7 @@ class PushFollowController extends Controller
         PushMessage::query()->whereKey($messages->modelKeys())->delete();
 
         return response()->json($messages
-            ->filter(fn (PushMessage $message): bool => $message->created_at?->gte(now()->subMinutes(self::MESSAGE_MINUTES)) ?? false)
+            ->filter(fn (PushMessage $message): bool => $message->created_at?->gte(now()->subMinutes(PushMessage::EXPIRES_MINUTES)) ?? false)
             ->map(fn (PushMessage $message): array => $message->only(['title', 'body', 'url', 'tag']))
             ->values()
             ->all())->header('Cache-Control', 'no-store');

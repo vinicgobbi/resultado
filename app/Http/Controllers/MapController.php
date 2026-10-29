@@ -33,7 +33,8 @@ class MapController extends Controller
             return $response;
         }
 
-        $content = Cache::rememberForever("mapa.geometria.{$version}", function (): string {
+        // Kept for a week: a new map or new municipalities change the version.
+        $content = Cache::remember("mapa.geometria.{$version}", now()->addWeek(), function (): string {
             $geometry = json_decode((string) Storage::get(MapGeometryBuilder::PATH), true, flags: JSON_THROW_ON_ERROR);
 
             $geometry['names'] = Municipality::query()

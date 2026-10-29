@@ -37,6 +37,16 @@ Schedule::command('tse:fotos --encerradas --sem-espera --cargo=presidente --carg
     ->withoutOverlapping(120)
     ->runInBackground();
 
+// Old push messages, deliveries and task runs, and the expired keys of the
+// cache (kept in the database, which only drops them when they are read).
+Schedule::command('model:prune')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();
+
+Schedule::command('cache:limpar-expirados')
+    ->dailyAt('04:10')
+    ->withoutOverlapping();
+
 // Push notifications are queued by the sync; a short-lived worker started by
 // the scheduler sends them, so no permanent worker process is required.
 Schedule::command('queue:work --stop-when-empty --max-time=60')

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -20,7 +22,19 @@ use Illuminate\Support\Carbon;
 #[Fillable(['delivered', 'failed', 'expired'])]
 class PushDelivery extends Model
 {
+    use MassPrunable;
+
     public const null UPDATED_AT = null;
+
+    /**
+     * Only the recent periods are shown on the dashboard.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::query()->where('created_at', '<', now()->subDays(90));
+    }
 
     /**
      * Totals since the given moment.
