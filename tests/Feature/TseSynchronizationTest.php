@@ -18,6 +18,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 
@@ -378,6 +379,35 @@ test('a candidate photo is downloaded from the TSE once, on the first request', 
 
     // Without the public/storage link, the route keeps serving the photo.
     expect($candidate->toPublicArray()['photo_url'])->toBe(route('candidates.photo', $candidate));
+});
+
+test('while an election is counted, only its photos are downloaded on demand', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    // 2026-10-26: the federal runoff is being counted.
+    $this->travelTo('2026-10-26 12:00:00');
+    Election::factory()->municipal2024()->completed()->create();
+    $councillor = Candidate::factory()->running(Office::Councillor, State::SaoPaulo, '71072')->create();
+    $president = Candidate::factory()->create();
+    Http::fake(['resultados.tse.jus.br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+
+    $this->get(route('candidates.photo', $councillor))->assertServiceUnavailable()->assertHeader('Retry-After', '1800');
+    $this->get(route('candidates.photo', $president))->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+test('a visitor cannot trigger more than a page of photo downloads a minute', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Http::fake(['resultados.tse.jus.br/*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+    $candidate = Candidate::factory()->create();
+    RateLimiter::increment('tse-fotos-visitante:127.0.0.1', 60, 60);
+
+    $this->get(route('candidates.photo', $candidate))->assertServiceUnavailable()->assertHeader('Retry-After');
+    $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.2'])->get(route('candidates.photo', $candidate))->assertOk();
+
+    Http::assertSentCount(1);
 });
 
 test('presidential photos come from the first round of the federal election', function () {
