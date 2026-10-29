@@ -6,6 +6,7 @@ test('pages cannot be framed by other sites nor have their type guessed', functi
         ->assertHeader('Content-Security-Policy', "frame-ancestors 'self'")
         ->assertHeader('X-Content-Type-Options', 'nosniff')
         ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+        ->assertHeader('Content-Security-Policy-Report-Only')
         ->assertHeaderMissing('Strict-Transport-Security');
 });
 
