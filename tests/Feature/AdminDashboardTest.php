@@ -1,6 +1,8 @@
 <?php
 
+use App\Console\RunOutput;
 use App\Enums\MaintenanceTask;
+use App\Exceptions\MaintenanceRunCancelled;
 use App\Jobs\RunMaintenanceTask;
 use App\Models\Election;
 use App\Models\MaintenanceRun;
@@ -9,7 +11,9 @@ use App\Models\User;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\Tse\TseClient;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(fn () => elections2026('2026-10-26 12:00:00'));
@@ -106,4 +110,66 @@ test('a scheduled and a manual sync never run at the same time', function () {
         ->assertSuccessful();
 
     expect(Election::query()->whereNotNull('last_synced_at')->exists())->toBeFalse();
+});
+
+test('a queued task cancelled from the dashboard never starts', function () {
+    $run = MaintenanceRun::factory()->create(['task' => MaintenanceTask::ClearCache]);
+
+    $this->actingAs(User::factory()->create())
+        ->post(route('admin.maintenance-runs.cancel', $run))
+        ->assertSessionHas('success');
+
+    RunMaintenanceTask::dispatchSync($run->refresh());
+
+    expect($run->refresh())
+        ->status->toBe(MaintenanceRun::CANCELLED)
+        ->started_at->toBeNull()
+        ->and(ResultSynchronizer::version(6258))->toBe(0);
+});
+
+test('a running task stops at the next line its command prints once cancelled', function () {
+    $run = MaintenanceRun::factory()->running()->create(['task' => MaintenanceTask::ClearCache]);
+    $output = new RunOutput($run);
+    $output->writeln('Antes');
+    $run->forceFill(['status' => MaintenanceRun::CANCELLED])->save();
+
+    $this->travel(2)->seconds();
+
+    expect(fn () => $output->writeln('Depois'))->toThrow(MaintenanceRunCancelled::class);
+});
+
+test('a finished task cannot be cancelled', function () {
+    $run = MaintenanceRun::factory()->create(['status' => MaintenanceRun::DONE]);
+
+    $this->actingAs(User::factory()->create())
+        ->post(route('admin.maintenance-runs.cancel', $run))
+        ->assertSessionHas('error');
+
+    expect($run->refresh()->status)->toBe(MaintenanceRun::DONE);
+});
+
+test('admins retry or clear the failed jobs', function () {
+    Queue::fake();
+    $failJob = fn () => DB::table('failed_jobs')->insert([
+        'uuid' => (string) Str::uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => json_encode(['uuid' => (string) Str::uuid(), 'displayName' => 'Job', 'job' => 'Job', 'data' => []]),
+        'exception' => 'RuntimeException: falhou',
+        'failed_at' => now(),
+    ]);
+    $admin = User::factory()->create();
+
+    $failJob();
+    $this->actingAs($admin)
+        ->post(route('admin.failed-jobs.retry'))
+        ->assertSessionHas('success', '1 job voltou para a fila.');
+    expect(DB::table('failed_jobs')->count())->toBe(0);
+
+    $failJob();
+    $failJob();
+    $this->actingAs($admin)
+        ->delete(route('admin.failed-jobs.destroy'))
+        ->assertSessionHas('success');
+    expect(DB::table('failed_jobs')->count())->toBe(0);
 });

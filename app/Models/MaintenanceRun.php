@@ -39,6 +39,8 @@ class MaintenanceRun extends Model
 
     public const string FAILED = 'falhou';
 
+    public const string CANCELLED = 'cancelada';
+
     /**
      * Get the attributes that should be cast.
      *
@@ -59,6 +61,15 @@ class MaintenanceRun extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Whether it was cancelled from the dashboard, as saved now (the run may
+     * be running in another process).
+     */
+    public function wasCancelled(): bool
+    {
+        return self::query()->whereKey($this->id)->value('status') === self::CANCELLED;
     }
 
     /**

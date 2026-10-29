@@ -2,12 +2,15 @@
 
 namespace App\Console;
 
+use App\Exceptions\MaintenanceRunCancelled;
 use App\Models\MaintenanceRun;
+use Carbon\CarbonImmutable;
 use Symfony\Component\Console\Output\Output;
 
 /**
  * Console output of a maintenance run, saved on the run as it is written so
- * the dashboard shows the progress of a long task.
+ * the dashboard shows the progress of a long task. A run cancelled from the
+ * dashboard stops the next time its command prints something.
  */
 class RunOutput extends Output
 {
@@ -23,7 +26,9 @@ class RunOutput extends Output
 
     private string $buffer = '';
 
-    private float $savedAt = 0;
+    private ?CarbonImmutable $savedAt = null;
+
+    private bool $cancelled = false;
 
     public function __construct(private readonly MaintenanceRun $run)
     {
@@ -38,14 +43,22 @@ class RunOutput extends Output
             $this->buffer = substr($this->buffer, -self::MAX_LENGTH);
         }
 
-        if (microtime(true) - $this->savedAt >= self::SAVE_EVERY_SECONDS) {
-            $this->save();
+        if ($this->cancelled || ($this->savedAt !== null && $this->savedAt->diffInSeconds(now()) < self::SAVE_EVERY_SECONDS)) {
+            return;
+        }
+
+        $this->save();
+
+        if ($this->run->wasCancelled()) {
+            $this->cancelled = true;
+
+            throw new MaintenanceRunCancelled;
         }
     }
 
     public function save(): void
     {
-        $this->savedAt = microtime(true);
+        $this->savedAt = now()->toImmutable();
         $this->run->forceFill(['output' => $this->buffer])->save();
     }
 }

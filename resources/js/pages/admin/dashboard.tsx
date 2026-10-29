@@ -1,11 +1,12 @@
-import { Head, router, usePoll } from '@inertiajs/react';
+import { Head, Link, router, usePoll } from '@inertiajs/react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import StatusBadge from '@/components/status-badge';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { store } from '@/routes/admin/maintenance-runs';
+import { destroy as clearFailedJobs, retry } from '@/routes/admin/failed-jobs';
+import { cancel, store } from '@/routes/admin/maintenance-runs';
 import type { ElectionStatus } from '@/types';
 
 type ElectionRow = {
@@ -38,7 +39,12 @@ type Task = {
     needs_election: boolean;
 };
 
-type RunStatus = 'na-fila' | 'executando' | 'concluida' | 'falhou';
+type RunStatus =
+    | 'na-fila'
+    | 'executando'
+    | 'concluida'
+    | 'falhou'
+    | 'cancelada';
 
 type Run = {
     id: number;
@@ -82,7 +88,11 @@ const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
         className: 'bg-success-soft text-success',
     },
     falhou: { label: 'Falhou', className: 'bg-live-soft text-live' },
+    cancelada: { label: 'Cancelada', className: 'bg-subtle text-muted' },
 };
+
+const smallButtonClass =
+    'min-h-9 rounded-lg border-2 border-line-strong px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft disabled:opacity-50';
 
 /**
  * A moment as "há 3 minutos", with the exact time on hover. Only the
@@ -206,6 +216,31 @@ export default function Dashboard({
                                 Última falha{' '}
                                 <Moment value={health.last_failure.at} />:{' '}
                                 {health.last_failure.message}
+                            </span>
+                        )}
+                        {health.failed_jobs > 0 && (
+                            <span className="mt-2 flex flex-wrap gap-2">
+                                <Link
+                                    href={retry()}
+                                    as="button"
+                                    preserveScroll
+                                    className={smallButtonClass}
+                                >
+                                    Tentar de novo
+                                </Link>
+                                <Link
+                                    href={clearFailedJobs()}
+                                    as="button"
+                                    preserveScroll
+                                    onBefore={() =>
+                                        confirm(
+                                            `Remover os ${health.failed_jobs} jobs com falha?`,
+                                        )
+                                    }
+                                    className={smallButtonClass}
+                                >
+                                    Limpar
+                                </Link>
                             </span>
                         )}
                     </HealthCard>
@@ -436,6 +471,25 @@ export default function Dashboard({
                                             {run.user ?? 'alguém'} ·{' '}
                                             <Moment value={run.created_at} />
                                         </span>
+                                        {(run.status === 'na-fila' ||
+                                            run.status === 'executando') && (
+                                            <Link
+                                                href={cancel(run.id)}
+                                                as="button"
+                                                preserveScroll
+                                                onBefore={() =>
+                                                    confirm(
+                                                        `Cancelar "${run.task_label}"?`,
+                                                    )
+                                                }
+                                                className={cn(
+                                                    smallButtonClass,
+                                                    'ml-auto',
+                                                )}
+                                            >
+                                                Cancelar
+                                            </Link>
+                                        )}
                                     </summary>
                                     <pre className="max-h-80 overflow-auto border-t border-line bg-subtle px-4 py-3 text-xs whitespace-pre-wrap">
                                         {run.output ||

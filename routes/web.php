@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CandidateController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\FailedJobController;
 use App\Http\Controllers\Admin\MaintenanceRunController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\LoginController;
@@ -44,6 +45,9 @@ Route::middleware('auth')->group(function () {
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/', [DashboardController::class, 'index'])->name('index');
         Route::post('/tarefas', [MaintenanceRunController::class, 'store'])->name('maintenance-runs.store');
+        Route::post('/tarefas/{maintenanceRun}/cancelar', [MaintenanceRunController::class, 'cancel'])->name('maintenance-runs.cancel');
+        Route::post('/fila/falhas/tentar-de-novo', [FailedJobController::class, 'retry'])->name('failed-jobs.retry');
+        Route::delete('/fila/falhas', [FailedJobController::class, 'destroy'])->name('failed-jobs.destroy');
 
         Route::get('/candidatos', [CandidateController::class, 'index'])->name('candidates.index');
         Route::patch('/candidatos/{candidate}', [CandidateController::class, 'update'])->name('candidates.update');

@@ -41,8 +41,9 @@ funcionando e agir sem precisar de acesso ao servidor.
 - [x] Trava no `tse:sincronizar`: a execução manual nunca roda junto com a
       agendada (evita notificação duplicada)
 - [x] Mesma tarefa não pode ser enfileirada duas vezes
-- [ ] Botão para cancelar uma tarefa em execução
-- [ ] Botão para tentar de novo / limpar os jobs com falha da fila
+- [x] Botão para cancelar uma tarefa na fila ou em execução (o comando para
+      na próxima linha que imprime)
+- [x] Botão para tentar de novo / limpar os jobs com falha da fila
 
 ### 3. Notificações
 
