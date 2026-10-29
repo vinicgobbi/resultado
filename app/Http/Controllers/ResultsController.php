@@ -96,6 +96,7 @@ class ResultsController extends Controller
             },
             'offices' => $siblings
                 ->flatMap(fn (Election $sibling): array => $sibling->offices
+                    ->filter(fn (Office $option): bool => $this->offeredIn($option, $state))
                     ->map(fn (Office $option): array => ['value' => $option->value, 'label' => $option->label($state), 'election' => $sibling->tse_code])
                     ->all())
                 ->values(),
@@ -151,6 +152,17 @@ class ResultsController extends Controller
                 ])
                 ->values(),
         ])->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Whether the tab of an office is shown: an office disputed in a single
+     * state (district councillors, in PE) only once that state is chosen.
+     */
+    private function offeredIn(Office $office, ?State $state): bool
+    {
+        return $state === null
+            ? count($office->states()) > 1
+            : in_array($state, $office->states(), true);
     }
 
     private function redirectFromRound(Request $request): RedirectResponse

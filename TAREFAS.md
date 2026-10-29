@@ -171,9 +171,9 @@ entenda como foi feita e possa refazê-la.
 
 ## Outras pendências
 
-- [ ] A aba "Conselheiro Distrital" aparece fora do DF (vem da lista de
-      cargos do backend)
-- [ ] Cartões de candidato apertados no celular, com nomes longos quebrando
-      em duas linhas (empilhar os votos embaixo do nome em telas estreitas)
+- [x] A aba "Conselheiro Distrital" aparecia em todos os estados: é o cargo
+      de Fernando de Noronha, e agora só aparece em Pernambuco
+- [x] Cartões de candidato apertados no celular, com nomes longos quebrando
+      em duas linhas (os votos descem para baixo do nome em cartões estreitos)
 - [ ] Avaliar se as notificações de atualização de municípios (no máximo a
       cada 10 minutos) não são frequentes demais

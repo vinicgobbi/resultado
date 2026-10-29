@@ -136,7 +136,8 @@ enum Office: string
 
     /**
      * States where the office can be disputed: voters abroad only vote for
-     * president, and the DF has no municipalities.
+     * president, the DF has no municipalities, and district councillors are
+     * only elected in Fernando de Noronha (PE).
      *
      * @return list<State>
      */
@@ -144,6 +145,7 @@ enum Office: string
     {
         return array_values(array_filter(State::cases(), fn (State $state): bool => match (true) {
             $this->isNationwide() => true,
+            $this === self::DistrictCouncillor => $state === State::Pernambuco,
             $this->isMunicipal() => ! in_array($state, [State::Exterior, State::DistritoFederal], true),
             default => $state !== State::Exterior,
         }));

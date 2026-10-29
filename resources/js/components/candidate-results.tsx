@@ -169,7 +169,7 @@ export default function CandidateResults({
                         <li
                             key={candidate.id}
                             data-flip-key={candidate.id}
-                            className="relative animate-fade-up overflow-hidden rounded-xl border border-line bg-surface p-4"
+                            className="@container relative animate-fade-up overflow-hidden rounded-xl border border-line bg-surface p-4"
                             style={{
                                 // The first ones arrive one after the other.
                                 animationDelay: `${Math.min(index, 8) * 45}ms`,
@@ -179,7 +179,9 @@ export default function CandidateResults({
                                 className="absolute inset-y-0 left-0 w-1.5"
                                 style={{ backgroundColor: candidate.color }}
                             />
-                            <div className="flex items-start gap-3 pl-2">
+                            {/* In a narrow card, the votes go below the name
+                                instead of squeezing it. */}
+                            <div className="flex flex-wrap items-start gap-x-3 gap-y-1 pl-2 @sm:flex-nowrap">
                                 <CandidatePhoto
                                     key={candidate.photo_url}
                                     candidate={candidate}
@@ -189,7 +191,7 @@ export default function CandidateResults({
                                         boxShadow: `0 0 0 2px ${candidate.color}`,
                                     }}
                                 />
-                                <div className="min-w-0 flex-1">
+                                <div className="min-w-0 flex-1 basis-0">
                                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg leading-tight font-bold text-ink">
                                         <span className="sr-only">
                                             {index + 1}º lugar:{' '}
@@ -228,7 +230,7 @@ export default function CandidateResults({
                                         {candidate.number}
                                     </p>
                                 </div>
-                                <div className="text-right">
+                                <div className="flex w-full items-baseline gap-2 pl-14 @sm:block @sm:w-auto @sm:pl-0 @sm:text-right">
                                     <p
                                         className={
                                             index < 2 && !proportional

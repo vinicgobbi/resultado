@@ -535,3 +535,20 @@ test('the icons are linked with their version, so browsers load new ones', funct
         ->assertSee('/favicon.svg?v='.filemtime(public_path('favicon.svg')), escape: false)
         ->assertSee('/favicon.ico?v='.filemtime(public_path('favicon.ico')), escape: false);
 });
+
+test('the district councillors tab is only shown in Pernambuco, where Fernando de Noronha elects them', function () {
+    Election::factory()->municipal2024()->completed()->create(['offices' => [Office::Mayor, Office::Councillor, Office::DistrictCouncillor]]);
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    Municipality::create(['tse_code' => '25313', 'ibge_code' => '2611606', 'state' => 'pe', 'name' => 'RECIFE']);
+    $paulista = Candidate::factory()->running(Office::Mayor, State::SaoPaulo, '71072')->create();
+    $pernambucano = Candidate::factory()->running(Office::Mayor, State::Pernambuco, '25313')->create();
+    storeMunicipalResult(Office::Mayor, '71072', [$paulista->id => 500]);
+    storeMunicipalResult(Office::Mayor, '25313', [$pernambucano->id => 500]);
+    $offices = fn (array $query): array => $this->get(route('elections.show', [619, 'cargo' => 'prefeito', ...$query]))
+        ->viewData('page')['props']['offices'];
+
+    expect(array_column($offices([]), 'value'))->toBe(['prefeito', 'vereador'])
+        ->and(array_column($offices(['uf' => 'sp']), 'value'))->toBe(['prefeito', 'vereador'])
+        ->and(array_column($offices(['uf' => 'pe']), 'value'))->toBe(['prefeito', 'vereador', 'conselheiro-distrital'])
+        ->and(Office::DistrictCouncillor->states())->toBe([State::Pernambuco]);
+});
