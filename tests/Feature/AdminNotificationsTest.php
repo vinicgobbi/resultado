@@ -30,12 +30,12 @@ function followResult(PushSubscription $subscription, Office $office, string $sc
 
 test('guests cannot send notifications', function () {
     $this->post(route('admin.notifications.announce'), ['title' => 'Aviso', 'body' => 'Texto'])->assertRedirect(route('login'));
-    $this->post(route('admin.notifications.test'), ['endpoint' => 'https://push.example/a'])->assertRedirect(route('login'));
+    $this->post(route('admin.notifications.test'), ['endpoint' => 'https://fcm.googleapis.com/fcm/send/a'])->assertRedirect(route('login'));
 });
 
 test('the dashboard lists the most followed results and the pushes sent by period', function () {
-    $first = subscribedBrowser('https://push.example/a');
-    $second = subscribedBrowser('https://push.example/b');
+    $first = subscribedBrowser('https://fcm.googleapis.com/fcm/send/a');
+    $second = subscribedBrowser('https://fcm.googleapis.com/fcm/send/b');
     followResult($first, Office::President, 'br');
     followResult($second, Office::President, 'br');
     followResult($first, Office::Governor, 'sp');
@@ -55,11 +55,11 @@ test('the dashboard lists the most followed results and the pushes sent by perio
 
 test('a push records what was delivered, refused and expired', function () {
     Http::fake([
-        'https://push.example/ok' => Http::response('', 201),
-        'https://push.example/gone' => Http::response('', 410),
-        'https://push.example/down' => Http::response('', 500),
+        'https://fcm.googleapis.com/fcm/send/ok' => Http::response('', 201),
+        'https://fcm.googleapis.com/fcm/send/gone' => Http::response('', 410),
+        'https://fcm.googleapis.com/fcm/send/down' => Http::response('', 500),
     ]);
-    $browsers = collect(['ok', 'gone', 'down'])->map(fn (string $name) => subscribedBrowser("https://push.example/{$name}"));
+    $browsers = collect(['ok', 'gone', 'down'])->map(fn (string $name) => subscribedBrowser("https://fcm.googleapis.com/fcm/send/{$name}"));
 
     expect(app(WebPush::class)->send($browsers))->toBe(1)
         ->and(PushDelivery::query()->sole()->only(['delivered', 'failed', 'expired']))->toBe(['delivered' => 1, 'failed' => 1, 'expired' => 1])
@@ -68,8 +68,8 @@ test('a push records what was delivered, refused and expired', function () {
 
 test('admins send a notice to the followers of a result', function () {
     Http::fake(['*' => Http::response('', 201)]);
-    $follower = subscribedBrowser('https://push.example/a');
-    $other = subscribedBrowser('https://push.example/b');
+    $follower = subscribedBrowser('https://fcm.googleapis.com/fcm/send/a');
+    $other = subscribedBrowser('https://fcm.googleapis.com/fcm/send/b');
     followResult($follower, Office::Governor, 'sp');
     followResult($other, Office::President, 'br');
 
@@ -91,8 +91,8 @@ test('admins send a notice to the followers of a result', function () {
 
 test('admins send a notice to every subscribed browser', function () {
     Queue::fake();
-    subscribedBrowser('https://push.example/a');
-    subscribedBrowser('https://push.example/b');
+    subscribedBrowser('https://fcm.googleapis.com/fcm/send/a');
+    subscribedBrowser('https://fcm.googleapis.com/fcm/send/b');
 
     $this->actingAs($this->admin)
         ->post(route('admin.notifications.announce'), ['title' => 'Começa às 17h', 'body' => 'A apuração começa às 17h.'])
@@ -103,7 +103,7 @@ test('admins send a notice to every subscribed browser', function () {
 
 test('a notice nobody would receive is not sent', function () {
     Queue::fake();
-    subscribedBrowser('https://push.example/a');
+    subscribedBrowser('https://fcm.googleapis.com/fcm/send/a');
 
     $this->actingAs($this->admin)
         ->post(route('admin.notifications.announce'), ['title' => 'Aviso', 'body' => 'Texto', 'office' => 'governador', 'scope_code' => 'sp'])
@@ -118,10 +118,10 @@ test('a notice nobody would receive is not sent', function () {
 
 test('admins send a test notification to their own browser', function () {
     Http::fake(['*' => Http::response('', 201)]);
-    $browser = subscribedBrowser('https://push.example/a');
+    $browser = subscribedBrowser('https://fcm.googleapis.com/fcm/send/a');
 
     $this->actingAs($this->admin)
-        ->post(route('admin.notifications.test'), ['endpoint' => 'https://push.example/a'])
+        ->post(route('admin.notifications.test'), ['endpoint' => 'https://fcm.googleapis.com/fcm/send/a'])
         ->assertSessionHas('success');
 
     expect(PushMessage::query()->sole())
@@ -129,6 +129,6 @@ test('admins send a test notification to their own browser', function () {
         ->tag->toBe('teste');
 
     $this->actingAs($this->admin)
-        ->post(route('admin.notifications.test'), ['endpoint' => 'https://push.example/desconhecido'])
+        ->post(route('admin.notifications.test'), ['endpoint' => 'https://fcm.googleapis.com/fcm/send/desconhecido'])
         ->assertSessionHas('error');
 });

@@ -18,9 +18,43 @@ use RuntimeException;
  */
 class WebPush
 {
+    /**
+     * Push services of the browsers (and their subdomains): the only hosts a
+     * subscription endpoint may point to, so the server never sends requests
+     * to an address chosen by a visitor.
+     */
+    private const array PUSH_SERVICES = [
+        'fcm.googleapis.com',
+        'push.services.mozilla.com',
+        'notify.windows.com',
+        'push.apple.com',
+    ];
+
     public static function isConfigured(): bool
     {
         return filled(config('services.webpush.public_key')) && filled(config('services.webpush.private_key'));
+    }
+
+    /**
+     * Whether the endpoint belongs to the push service of a browser.
+     */
+    public static function isPushService(string $endpoint): bool
+    {
+        $parts = parse_url($endpoint);
+
+        if ($parts === false || ($parts['scheme'] ?? null) !== 'https' || ! isset($parts['host'])) {
+            return false;
+        }
+
+        $host = strtolower($parts['host']);
+
+        foreach (self::PUSH_SERVICES as $allowed) {
+            if ($host === $allowed || str_ends_with($host, '.'.$allowed)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -58,6 +92,9 @@ class WebPush
      */
     public function send(Collection $subscriptions, int $ttl = 600): int
     {
+        // Subscriptions saved before the push services were checked.
+        $subscriptions = $subscriptions->filter(fn (PushSubscription $subscription): bool => self::isPushService($subscription->endpoint));
+
         if (! self::isConfigured() || $subscriptions->isEmpty()) {
             return 0;
         }

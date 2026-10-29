@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Services\WebPush;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -23,7 +25,11 @@ class StorePushSubscriptionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'endpoint' => ['required', 'string', 'url:https', 'max:2048'],
+            'endpoint' => ['required', 'string', 'url:https', 'max:2048', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! WebPush::isPushService((string) $value)) {
+                    $fail('Serviço de notificações não reconhecido.');
+                }
+            }],
             'keys.p256dh' => ['nullable', 'string', 'max:255'],
             'keys.auth' => ['nullable', 'string', 'max:255'],
         ];

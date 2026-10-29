@@ -174,14 +174,14 @@ function followingBrowser(string $endpoint, array $follow = []): PushSubscriptio
 test('a push notification is sent only when a followed result changes', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc');
-    $pushes = fn (): int => Http::recorded(fn (Request $request): bool => $request->url() === 'https://push.example.com/abc')->count();
+    followingBrowser('https://fcm.googleapis.com/abc');
+    $pushes = fn (): int => Http::recorded(fn (Request $request): bool => $request->url() === 'https://fcm.googleapis.com/abc')->count();
 
-    fakeTse(countryTime: '20:00:00', overrides: ['push.example.com/*' => Http::response('', 201)]);
+    fakeTse(countryTime: '20:00:00', overrides: ['fcm.googleapis.com/*' => Http::response('', 201)]);
     $this->artisan('tse:sincronizar')->assertSuccessful();
 
     expect($pushes())->toBe(1);
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://push.example.com/abc'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://fcm.googleapis.com/abc'
         && str_starts_with($request->header('Authorization')[0], 'vapid t=')
         && $request->header('TTL')[0] === '600');
 
@@ -192,11 +192,11 @@ test('a push notification is sent only when a followed result changes', function
 test('a followed result gets a message about its new results', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc');
+    followingBrowser('https://fcm.googleapis.com/abc');
     // Still open: 2 × 520 is not more than 1000 valid votes + 100 voters left.
     fakeTse(overrides: [
         TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 520, '280002542548' => 480])),
-        'push.example.com/*' => Http::response('', 201),
+        'fcm.googleapis.com/*' => Http::response('', 201),
     ]);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -212,11 +212,11 @@ test('a followed result gets a message about its new results', function () {
 test('a result that becomes mathematically decided notifies it once', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc', ['notify_updates' => false]);
+    followingBrowser('https://fcm.googleapis.com/abc', ['notify_updates' => false]);
     // 900 valid votes and 100 voters left: 2 × 700 > 900 + 100.
     fakeTse(overrides: [
         TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 700, '280002542548' => 200])),
-        'push.example.com/*' => Http::response('', 201),
+        'fcm.googleapis.com/*' => Http::response('', 201),
     ]);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -235,13 +235,13 @@ test('a result that becomes mathematically decided notifies it once', function (
 test('the end of the count tells who was elected', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc');
+    followingBrowser('https://fcm.googleapis.com/abc');
     fakeTse(overrides: [
         TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response([
             ...tseResult(['280002551544' => 400, '280002542548' => 600], counted: '100', elected: '280002542548'),
             'and' => 'f',
         ]),
-        'push.example.com/*' => Http::response('', 201),
+        'fcm.googleapis.com/*' => Http::response('', 201),
     ]);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -255,8 +255,8 @@ test('the end of the count tells who was elected', function () {
 test('new results of a followed result are notified at most every ten minutes', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc');
-    fakeTse(overrides: ['push.example.com/*' => Http::response('', 201)]);
+    followingBrowser('https://fcm.googleapis.com/abc');
+    fakeTse(overrides: ['fcm.googleapis.com/*' => Http::response('', 201)]);
     $changeCountry = fn () => Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -276,16 +276,16 @@ test('new results of a followed result are notified at most every ten minutes', 
 test('nothing is sent for kinds of notification the follower turned off', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc', ['notify_updates' => false]);
+    followingBrowser('https://fcm.googleapis.com/abc', ['notify_updates' => false]);
     fakeTse(overrides: [
         TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => Http::response(tseResult(['280002551544' => 520, '280002542548' => 480])),
-        'push.example.com/*' => Http::response('', 201),
+        'fcm.googleapis.com/*' => Http::response('', 201),
     ]);
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
 
     expect(PushMessage::query()->count())->toBe(0);
-    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'push.example.com'));
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'fcm.googleapis.com'));
 });
 
 test('a sync without followers queues no notification', function () {
@@ -303,7 +303,7 @@ test('the push notification is queued instead of holding up the sync', function 
     Http::preventStrayRequests();
     Queue::fake();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/abc');
+    followingBrowser('https://fcm.googleapis.com/abc');
     fakeTse();
 
     $this->artisan('tse:sincronizar')->assertSuccessful();
@@ -337,9 +337,9 @@ test('a sync caches the results under a new version only when something changed'
 test('expired push subscriptions are removed', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
-    followingBrowser('https://push.example.com/gone');
+    followingBrowser('https://fcm.googleapis.com/gone');
 
-    fakeTse(overrides: ['push.example.com/*' => Http::response('', 410)]);
+    fakeTse(overrides: ['fcm.googleapis.com/*' => Http::response('', 410)]);
     $this->artisan('tse:sincronizar')->assertSuccessful();
 
     expect(PushSubscription::query()->count())->toBe(0);
