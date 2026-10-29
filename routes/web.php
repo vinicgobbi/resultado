@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\CandidateController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FailedJobController;
 use App\Http\Controllers\Admin\MaintenanceRunController;
+use App\Http\Controllers\Admin\PushNotificationController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CandidatePhotoController;
@@ -48,6 +49,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/tarefas/{maintenanceRun}/cancelar', [MaintenanceRunController::class, 'cancel'])->name('maintenance-runs.cancel');
         Route::post('/fila/falhas/tentar-de-novo', [FailedJobController::class, 'retry'])->name('failed-jobs.retry');
         Route::delete('/fila/falhas', [FailedJobController::class, 'destroy'])->name('failed-jobs.destroy');
+
+        Route::post('/notificacoes/aviso', [PushNotificationController::class, 'announce'])->name('notifications.announce');
+        Route::post('/notificacoes/teste', [PushNotificationController::class, 'test'])->name('notifications.test');
 
         Route::get('/candidatos', [CandidateController::class, 'index'])->name('candidates.index');
         Route::patch('/candidatos/{candidate}', [CandidateController::class, 'update'])->name('candidates.update');

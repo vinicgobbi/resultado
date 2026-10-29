@@ -1,12 +1,14 @@
-import { Head, Link, router, usePoll } from '@inertiajs/react';
+import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import StatusBadge from '@/components/status-badge';
 import AdminLayout from '@/layouts/admin-layout';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format';
+import { currentSubscription } from '@/lib/push';
 import { cn } from '@/lib/utils';
 import { destroy as clearFailedJobs, retry } from '@/routes/admin/failed-jobs';
 import { cancel, store } from '@/routes/admin/maintenance-runs';
+import { announce, test } from '@/routes/admin/notifications';
 import type { ElectionStatus } from '@/types';
 
 type ElectionRow = {
@@ -59,12 +61,28 @@ type Run = {
     output: string;
 };
 
+type Deliveries = {
+    label: string;
+    delivered: number;
+    failed: number;
+    expired: number;
+};
+
+type Followed = {
+    office: string;
+    scope_code: string;
+    label: string;
+    followers: number;
+};
+
 type Props = {
     elections: ElectionRow[];
     health: Health;
     tasks: Task[];
     runs: Run[];
     running: boolean;
+    deliveries: Deliveries[];
+    followed: Followed[];
 };
 
 /** Tasks that take long or download a lot: confirmed before starting. */
@@ -90,6 +108,9 @@ const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
     falhou: { label: 'Falhou', className: 'bg-live-soft text-live' },
     cancelada: { label: 'Cancelada', className: 'bg-subtle text-muted' },
 };
+
+const inputClass =
+    'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
 
 const smallButtonClass =
     'min-h-9 rounded-lg border-2 border-line-strong px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft disabled:opacity-50';
@@ -148,12 +169,15 @@ export default function Dashboard({
     tasks,
     runs,
     running,
+    deliveries,
+    followed,
 }: Props) {
     const [starting, setStarting] = useState<string | null>(null);
+    const [testing, setTesting] = useState(false);
 
     // Follows a task closely while one runs.
     usePoll(running ? 3000 : 30_000, {
-        only: ['elections', 'health', 'runs', 'running'],
+        only: ['elections', 'health', 'runs', 'running', 'deliveries'],
         showProgress: false,
     });
 
@@ -183,6 +207,21 @@ export default function Dashboard({
                 preserveScroll: true,
                 onStart: () => setStarting(task.value + (election?.code ?? '')),
                 onFinish: () => setStarting(null),
+            },
+        );
+    }
+
+    async function sendTest() {
+        setTesting(true);
+
+        const subscription = await currentSubscription().catch(() => null);
+
+        router.post(
+            test.url(),
+            { endpoint: subscription?.endpoint ?? '' },
+            {
+                preserveScroll: true,
+                onFinish: () => setTesting(false),
             },
         );
     }
@@ -429,6 +468,227 @@ export default function Dashboard({
                             </li>
                         ))}
                 </ul>
+            </section>
+
+            <section aria-labelledby="notificacoes" className="space-y-3">
+                <h2 id="notificacoes" className="text-lg font-bold">
+                    Notificações
+                </h2>
+                <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+                        <h3 className="font-semibold">Envios</h3>
+                        <table className="w-full text-left text-sm">
+                            <thead className="text-muted">
+                                <tr>
+                                    <th
+                                        scope="col"
+                                        className="py-1 font-medium"
+                                    >
+                                        Período
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        className="py-1 text-right font-medium"
+                                    >
+                                        Entregues
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        className="py-1 text-right font-medium"
+                                    >
+                                        Falhas
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        className="py-1 text-right font-medium"
+                                    >
+                                        Expiradas
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-line tabular-nums">
+                                {deliveries.map((period) => (
+                                    <tr key={period.label}>
+                                        <th
+                                            scope="row"
+                                            className="py-1.5 font-normal"
+                                        >
+                                            {period.label}
+                                        </th>
+                                        <td className="py-1.5 text-right">
+                                            {period.delivered.toLocaleString(
+                                                'pt-BR',
+                                            )}
+                                        </td>
+                                        <td
+                                            className={cn(
+                                                'py-1.5 text-right',
+                                                period.failed > 0 &&
+                                                    'font-semibold text-live',
+                                            )}
+                                        >
+                                            {period.failed.toLocaleString(
+                                                'pt-BR',
+                                            )}
+                                        </td>
+                                        <td className="py-1.5 text-right text-muted">
+                                            {period.expired.toLocaleString(
+                                                'pt-BR',
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <p className="text-xs text-muted">
+                            Expiradas: inscrições que o navegador cancelou; são
+                            removidas sozinhas.
+                        </p>
+                        <button
+                            type="button"
+                            disabled={testing || !health.push_ready}
+                            onClick={() => void sendTest()}
+                            className={smallButtonClass}
+                        >
+                            {testing
+                                ? 'Enviando…'
+                                : 'Enviar notificação de teste para este aparelho'}
+                        </button>
+                    </div>
+
+                    <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+                        <h3 className="font-semibold">
+                            Resultados mais seguidos
+                        </h3>
+                        {followed.length === 0 ? (
+                            <p className="text-sm text-muted">
+                                Ninguém segue um resultado ainda.
+                            </p>
+                        ) : (
+                            <ol className="divide-y divide-line text-sm">
+                                {followed.map((item) => (
+                                    <li
+                                        key={`${item.office}-${item.scope_code}`}
+                                        className="flex justify-between gap-3 py-1.5"
+                                    >
+                                        <span>{item.label}</span>
+                                        <span className="text-muted tabular-nums">
+                                            {item.followers.toLocaleString(
+                                                'pt-BR',
+                                            )}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ol>
+                        )}
+                    </div>
+                </div>
+
+                <Form
+                    {...announce.form()}
+                    transform={(data) => {
+                        const [office, scopeCode] = String(
+                            data.target ?? '',
+                        ).split('|');
+
+                        return {
+                            title: data.title,
+                            body: data.body,
+                            office: office || null,
+                            scope_code: scopeCode || null,
+                        };
+                    }}
+                    resetOnSuccess
+                    options={{ preserveScroll: true }}
+                    onBefore={() =>
+                        confirm(
+                            'Enviar este aviso agora? Não dá para desfazer.',
+                        )
+                    }
+                    className="space-y-3 rounded-2xl border border-line bg-surface p-4"
+                >
+                    {({ errors, processing }) => (
+                        <>
+                            <h3 className="font-semibold">Enviar aviso</h3>
+                            <p className="text-sm text-muted">
+                                Por exemplo: "O TSE está atrasando a
+                                divulgação". Chega como notificação e abre o
+                                resultado escolhido (ou a página inicial).
+                            </p>
+                            <label className="block text-sm">
+                                <span className="mb-1 block font-medium">
+                                    Para
+                                </span>
+                                <select name="target" className={inputClass}>
+                                    <option value="">
+                                        Todos os navegadores inscritos (
+                                        {health.subscriptions.toLocaleString(
+                                            'pt-BR',
+                                        )}
+                                        )
+                                    </option>
+                                    {followed.map((item) => (
+                                        <option
+                                            key={`${item.office}-${item.scope_code}`}
+                                            value={`${item.office}|${item.scope_code}`}
+                                        >
+                                            Quem segue {item.label} (
+                                            {item.followers.toLocaleString(
+                                                'pt-BR',
+                                            )}
+                                            )
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.scope_code && (
+                                    <span className="mt-1 block text-xs text-live">
+                                        {errors.scope_code}
+                                    </span>
+                                )}
+                            </label>
+                            <label className="block text-sm">
+                                <span className="mb-1 block font-medium">
+                                    Título
+                                </span>
+                                <input
+                                    name="title"
+                                    required
+                                    maxLength={100}
+                                    className={inputClass}
+                                />
+                                {errors.title && (
+                                    <span className="mt-1 block text-xs text-live">
+                                        {errors.title}
+                                    </span>
+                                )}
+                            </label>
+                            <label className="block text-sm">
+                                <span className="mb-1 block font-medium">
+                                    Mensagem
+                                </span>
+                                <textarea
+                                    name="body"
+                                    required
+                                    maxLength={300}
+                                    rows={2}
+                                    className={inputClass}
+                                />
+                                {errors.body && (
+                                    <span className="mt-1 block text-xs text-live">
+                                        {errors.body}
+                                    </span>
+                                )}
+                            </label>
+                            <button
+                                type="submit"
+                                disabled={processing || !health.push_ready}
+                                className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50"
+                            >
+                                Enviar aviso
+                            </button>
+                        </>
+                    )}
+                </Form>
             </section>
 
             <section aria-labelledby="execucoes" className="space-y-3">

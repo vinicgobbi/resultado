@@ -6,10 +6,12 @@ use App\Enums\MaintenanceTask;
 use App\Http\Controllers\Controller;
 use App\Models\Election;
 use App\Models\MaintenanceRun;
+use App\Models\PushDelivery;
 use App\Models\PushFollow;
 use App\Models\PushSubscription;
 use App\Models\Result;
 use App\Services\MapGeometryBuilder;
+use App\Services\ResultPlace;
 use App\Services\Tse\TseClient;
 use App\Services\WebPush;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +36,11 @@ class DashboardController extends Controller
      * Only the end of a run's output is sent to the page.
      */
     private const int OUTPUT_TAIL = 4000;
+
+    /**
+     * Most followed results shown.
+     */
+    private const int FOLLOWED = 20;
 
     /**
      * How the synchronization is going, what may need attention, and the
@@ -99,6 +106,36 @@ class DashboardController extends Controller
                     'output' => Str::substr($run->output ?? '', -self::OUTPUT_TAIL),
                 ]),
             'running' => MaintenanceRun::query()->unfinished()->exists(),
+            'deliveries' => [
+                ['label' => 'Última hora', ...PushDelivery::totalsSince(now()->subHour())],
+                ['label' => 'Últimas 24 horas', ...PushDelivery::totalsSince(now()->subDay())],
+                ['label' => 'Últimos 7 dias', ...PushDelivery::totalsSince(now()->subWeek())],
+            ],
+            'followed' => $this->mostFollowed(),
         ]);
+    }
+
+    /**
+     * Results followed by the most browsers.
+     *
+     * @return list<array{office: string, scope_code: string, label: string, followers: int}>
+     */
+    private function mostFollowed(): array
+    {
+        return PushFollow::query()
+            ->groupBy('office', 'scope_code')
+            ->selectRaw('office, scope_code, count(*) as followers')
+            ->orderByDesc('followers')
+            ->orderBy('office')
+            ->orderBy('scope_code')
+            ->limit(self::FOLLOWED)
+            ->get()
+            ->map(fn (PushFollow $follow): array => [
+                'office' => $follow->office->value,
+                'scope_code' => $follow->scope_code,
+                'label' => (new ResultPlace($follow->office, $follow->scope_code))->label(),
+                'followers' => (int) $follow->getAttribute('followers'),
+            ])
+            ->all();
     }
 }

@@ -94,6 +94,39 @@ class ResultNotifier
     }
 
     /**
+     * Send a message written by an admin to the followers of a result, or to
+     * every subscribed browser.
+     *
+     * @return int browsers woken up
+     */
+    public function announce(string $title, string $body, ?ResultPlace $place = null): int
+    {
+        $election = $place?->latestElection();
+        $subscriptions = PushSubscription::query()
+            ->when($place !== null, fn (Builder $query) => $query->whereHas('follows', fn (Builder $query) => $query
+                ->where('office', $place?->office)
+                ->where('scope_code', $place?->scopeCode)))
+            ->get();
+        $message = [
+            'title' => mb_substr($title, 0, 255),
+            'body' => mb_substr($body, 0, 500),
+            'url' => $place === null || $election === null ? route('home', absolute: false) : $place->url($election),
+            // Every notice is shown, not replaced by the next one.
+            'tag' => 'aviso-'.now()->getTimestamp(),
+            'created_at' => now(),
+        ];
+
+        foreach ($subscriptions->chunk(500) as $chunk) {
+            PushMessage::query()->insert($chunk->map(fn (PushSubscription $subscription): array => [
+                'push_subscription_id' => $subscription->id,
+                ...$message,
+            ])->values()->all());
+        }
+
+        return $this->webPush->send($subscriptions);
+    }
+
+    /**
      * Follows of the result that want this kind of notification; new results
      * at most once every few minutes.
      *

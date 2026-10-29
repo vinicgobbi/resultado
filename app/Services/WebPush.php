@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\PushDelivery;
 use App\Models\PushSubscription;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
@@ -49,8 +50,8 @@ class WebPush
     }
 
     /**
-     * Wake the given subscriptions up, removing expired ones. Each service
-     * worker then fetches its own waiting messages.
+     * Wake the given subscriptions up, removing expired ones, and keep how
+     * it went. Each service worker then fetches its own waiting messages.
      *
      * @param  Collection<int, PushSubscription>  $subscriptions
      * @return int number of subscriptions that accepted the push
@@ -87,20 +88,20 @@ class WebPush
 
         $expired = [];
         $delivered = 0;
+        $failed = 0;
 
         foreach ($responses as $id => $response) {
-            if (! $response instanceof Response) {
-                continue;
-            }
-
-            if ($response->successful()) {
+            if ($response instanceof Response && $response->successful()) {
                 $delivered++;
-            } elseif (in_array($response->status(), [404, 410], true)) {
+            } elseif ($response instanceof Response && in_array($response->status(), [404, 410], true)) {
                 $expired[] = (int) $id;
+            } else {
+                $failed++;
             }
         }
 
         PushSubscription::query()->whereKey($expired)->delete();
+        PushDelivery::create(['delivered' => $delivered, 'failed' => $failed, 'expired' => count($expired)]);
 
         return $delivered;
     }

@@ -49,11 +49,12 @@ funcionando e agir sem precisar de acesso ao servidor.
 
 - [x] Número de navegadores inscritos e de resultados seguidos (no cartão
       de notificações push do painel)
-- [ ] Resultados mais seguidos (ex.: "Presidente · Brasil: 1.200")
-- [ ] Mensagens enviadas e falhas por período
-- [ ] Aviso manual para quem segue um resultado ou para todos (ex.: "o TSE
+- [x] Resultados mais seguidos (ex.: "Presidente · Brasil: 1.200")
+- [x] Notificações entregues, falhas e inscrições expiradas por período
+      (última hora, 24 horas e 7 dias)
+- [x] Aviso manual para quem segue um resultado ou para todos (ex.: "o TSE
       está atrasando a divulgação")
-- [ ] Notificação de teste para o próprio aparelho
+- [x] Notificação de teste para o próprio aparelho
 
 ### 4. Aviso no site
 
@@ -78,7 +79,8 @@ funcionando e agir sem precisar de acesso ao servidor.
 
 ### Antes de publicar as mudanças do painel
 
-- Rodar as migrações (`push_follows`, `push_messages`, `maintenance_runs`)
+- Rodar as migrações (`push_follows`, `push_messages`, `maintenance_runs`,
+  `push_deliveries`)
 - Confirmar que o agendador (`schedule:run` no cron ou `schedule:work`) está
   ativo no servidor: é ele que inicia o worker da fila `admin`; sem isso, as
   tarefas ficam paradas em "Na fila"
