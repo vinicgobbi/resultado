@@ -3,6 +3,7 @@
 use App\Console\RunOutput;
 use App\Enums\MaintenanceTask;
 use App\Exceptions\MaintenanceRunCancelled;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Jobs\RunMaintenanceTask;
 use App\Models\Candidate;
 use App\Models\Election;
@@ -194,4 +195,21 @@ test('a photo task that reached its time limit is queued again to continue', fun
     $next = MaintenanceRun::query()->whereKeyNot($run->id)->sole();
     expect($next)->task->toBe(MaintenanceTask::Photos)->status->toBe(MaintenanceRun::QUEUED);
     Queue::assertPushed(RunMaintenanceTask::class, fn (RunMaintenanceTask $job): bool => $job->run->is($next));
+});
+
+test('the dashboard poll only computes the props it asks for', function () {
+    DB::enableQueryLog();
+
+    $this->actingAs(User::factory()->create())
+        ->get(route('admin.index'), [
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
+            'X-Inertia-Partial-Component' => 'admin/dashboard',
+            'X-Inertia-Partial-Data' => 'runs,running',
+        ])
+        ->assertOk()
+        ->assertJsonMissingPath('props.followed')
+        ->assertJsonPath('props.running', false);
+
+    expect(collect(DB::getQueryLog())->pluck('query')->filter(fn (string $query): bool => str_contains($query, 'push_follows')))->toBeEmpty();
 });
