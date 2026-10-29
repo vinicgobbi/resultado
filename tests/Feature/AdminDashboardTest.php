@@ -4,6 +4,7 @@ use App\Console\RunOutput;
 use App\Enums\MaintenanceTask;
 use App\Exceptions\MaintenanceRunCancelled;
 use App\Jobs\RunMaintenanceTask;
+use App\Models\Candidate;
 use App\Models\Election;
 use App\Models\MaintenanceRun;
 use App\Models\Result;
@@ -12,7 +13,10 @@ use App\Services\Tse\ResultSynchronizer;
 use App\Services\Tse\TseClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -172,4 +176,22 @@ test('admins retry or clear the failed jobs', function () {
         ->delete(route('admin.failed-jobs.destroy'))
         ->assertSessionHas('success');
     expect(DB::table('failed_jobs')->count())->toBe(0);
+});
+
+test('a photo task that reached its time limit is queued again to continue', function () {
+    Queue::fake();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Sleep::fake(syncWithCarbon: true);
+    Candidate::factory()->create();
+    Http::fake(['*' => Http::response('', 429)]);
+    $run = MaintenanceRun::factory()->create(['task' => MaintenanceTask::Photos]);
+
+    (new RunMaintenanceTask($run))->handle();
+
+    expect($run->refresh())
+        ->status->toBe(MaintenanceRun::DONE)
+        ->output->toContain('Uma nova execução continua');
+    $next = MaintenanceRun::query()->whereKeyNot($run->id)->sole();
+    expect($next)->task->toBe(MaintenanceTask::Photos)->status->toBe(MaintenanceRun::QUEUED);
+    Queue::assertPushed(RunMaintenanceTask::class, fn (RunMaintenanceTask $job): bool => $job->run->is($next));
 });

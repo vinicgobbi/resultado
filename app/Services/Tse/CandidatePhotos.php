@@ -3,6 +3,7 @@
 namespace App\Services\Tse;
 
 use App\Models\Candidate;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
@@ -24,6 +25,22 @@ class CandidatePhotos
     public function isMissing(Candidate $candidate): bool
     {
         return Cache::has(self::missingKey($candidate));
+    }
+
+    /**
+     * The candidates whose photo is neither stored nor known to be missing,
+     * checking the "missing" marks of all of them in one cache read.
+     *
+     * @param  Collection<int, Candidate>  $candidates
+     * @return Collection<int, Candidate>
+     */
+    public function pending(Collection $candidates): Collection
+    {
+        $missing = Cache::many($candidates->map(fn (Candidate $candidate): string => self::missingKey($candidate))->values()->all());
+
+        return $candidates
+            ->reject(fn (Candidate $candidate): bool => ($missing[self::missingKey($candidate)] ?? null) !== null || $this->isStored($candidate))
+            ->values();
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\DownloadCandidatePhotos;
 use App\Enums\Office;
 use App\Enums\State;
 use App\Jobs\SendResultsNotification;
@@ -12,6 +13,7 @@ use App\Models\Result;
 use App\Services\Tse\ResultSynchronizer;
 use App\Services\Tse\TseClient;
 use App\Services\WebPush;
+use Carbon\CarbonInterval;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -630,11 +632,65 @@ test('the photos command waits for the pause after a 429 and continues', functio
         ->push('', 429)
         ->push("\xFF\xD8\xFF\xE0fake-jpeg");
 
+    $startedAt = now();
+
     $this->artisan('tse:fotos')
         ->expectsOutputToContain('Aguardando para continuar')
+        ->expectsOutputToContain('Aguardando o TSE até')
         ->expectsOutputToContain('1 fotos baixadas')
         ->assertSuccessful();
 
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($candidate->tse_sequence));
-    Sleep::assertSleptTimes(1);
+    // In steps of a minute at most, printing a line between them.
+    expect($startedAt->diffInSeconds(now()))->toBeGreaterThanOrEqual(300);
+    Sleep::assertSlept(fn (CarbonInterval $duration): bool => $duration->totalSeconds <= 60, 6);
+});
+
+test('the photos command continues from where the last run stopped', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    $president = Candidate::factory()->create();
+    $governor = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    $blocked = true;
+    Http::fake(function (Request $request) use (&$blocked, $governor) {
+        return $blocked && str_contains($request->url(), $governor->tse_sequence)
+            ? Http::response('', 429)
+            : Http::response("\xFF\xD8\xFF\xE0fake-jpeg");
+    });
+
+    // Presidents come first: they are kept as checked before the 429.
+    $this->artisan('tse:fotos', ['--sem-espera' => true])->assertFailed();
+
+    $this->travel(1)->hour();
+    Storage::disk(Candidate::PHOTO_DISK)->delete(Candidate::photoPath($president->tse_sequence));
+    $blocked = false;
+
+    $this->artisan('tse:fotos')
+        ->expectsOutputToContain('Continuando de onde a última execução parou: 1 de 2')
+        ->expectsOutputToContain('1 fotos baixadas')
+        ->assertSuccessful();
+
+    // The president was not checked again; a complete pass starts over.
+    Storage::disk(Candidate::PHOTO_DISK)->assertMissing(Candidate::photoPath($president->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($governor->tse_sequence));
+
+    $this->artisan('tse:fotos')
+        ->doesntExpectOutputToContain('Continuando')
+        ->expectsOutputToContain('1 fotos baixadas')
+        ->assertSuccessful();
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($president->tse_sequence));
+});
+
+test('the photos command stops at the time limit instead of waiting past it', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    Sleep::fake(syncWithCarbon: true);
+    Candidate::factory()->create();
+    Http::fake(['*' => Http::response('', 429)]);
+
+    $this->artisan('tse:fotos', ['--minutos' => 2])
+        ->expectsOutputToContain('Parou depois de 2 minutos')
+        ->assertExitCode(DownloadCandidatePhotos::INCOMPLETE);
+
+    Sleep::assertNeverSlept();
 });

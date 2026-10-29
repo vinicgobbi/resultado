@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Console\Commands\DownloadCandidatePhotos;
 use App\Console\RunOutput;
 use App\Exceptions\MaintenanceRunCancelled;
 use App\Models\Election;
@@ -24,6 +25,12 @@ class RunMaintenanceTask implements ShouldQueue
      * (hundreds of thousands) can take more than an hour.
      */
     public int $timeout = 14_400;
+
+    /**
+     * A task that can continue later stops by itself this long, leaving
+     * margin before the timeout kills it.
+     */
+    public const int TIME_LIMIT_MINUTES = 230;
 
     public int $tries = 1;
 
@@ -57,16 +64,31 @@ class RunMaintenanceTask implements ShouldQueue
             $exitCode = null;
         }
 
+        $continues = $exitCode === DownloadCandidatePhotos::INCOMPLETE && $this->run->task->continuesUntilDone();
+
+        if ($continues) {
+            $output->writeln('Uma nova execução continua de onde esta parou.');
+        }
+
         $output->save();
 
         // The status of a cancelled run was already set by the dashboard.
-        MaintenanceRun::query()
+        $finished = MaintenanceRun::query()
             ->whereKey($this->run->id)
             ->where('status', MaintenanceRun::RUNNING)
             ->update([
-                'status' => $exitCode === 0 ? MaintenanceRun::DONE : MaintenanceRun::FAILED,
+                'status' => $exitCode === 0 || $continues ? MaintenanceRun::DONE : MaintenanceRun::FAILED,
                 'finished_at' => now(),
             ]);
+
+        if ($continues && $finished === 1) {
+            self::dispatch(MaintenanceRun::create([
+                'user_id' => $this->run->user_id,
+                'task' => $this->run->task,
+                'election_code' => $this->run->election_code,
+                'status' => MaintenanceRun::QUEUED,
+            ]));
+        }
     }
 
     public function failed(?Throwable $exception): void

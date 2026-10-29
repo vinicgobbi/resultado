@@ -2,6 +2,7 @@
 
 namespace App\Enums;
 
+use App\Jobs\RunMaintenanceTask;
 use App\Models\Election;
 
 /**
@@ -44,7 +45,7 @@ enum MaintenanceTask: string
             self::Import => 'Importa as eleições encerradas que ainda não foram baixadas.',
             self::Photos => 'Baixa do TSE as fotos que faltam dos candidatos da eleição atual, sem provocar bloqueio.',
             self::ElectionPhotos => 'Baixa do TSE as fotos que faltam dos candidatos de uma eleição.',
-            self::PastPhotos => 'Baixa as fotos que faltam de todas as eleições encerradas, da mais recente para a mais antiga. As municipais têm centenas de milhares de candidatos: pode levar horas e ocupar alguns GB.',
+            self::PastPhotos => 'Baixa as fotos que faltam de todas as eleições encerradas, da mais recente para a mais antiga. As municipais têm centenas de milhares de candidatos: pode levar horas e ocupar alguns GB. A cada 4 horas a tarefa recomeça sozinha de onde parou.',
             self::Map => 'Baixa a malha do IBGE e gera de novo a geometria do mapa.',
             self::ClearCache => 'Faz as páginas de resultados serem calculadas de novo na próxima visita.',
         };
@@ -56,6 +57,15 @@ enum MaintenanceTask: string
     public function needsElection(): bool
     {
         return in_array($this, [self::FullSync, self::ElectionPhotos], true);
+    }
+
+    /**
+     * Whether the task stops before the time limit of the job and keeps where
+     * it stopped: the dashboard then starts it again to continue.
+     */
+    public function continuesUntilDone(): bool
+    {
+        return in_array($this, [self::Photos, self::ElectionPhotos, self::PastPhotos], true);
     }
 
     /**
@@ -77,14 +87,16 @@ enum MaintenanceTask: string
      */
     public function command(?Election $election = null): array
     {
+        $minutes = ['--minutos' => RunMaintenanceTask::TIME_LIMIT_MINUTES];
+
         return match ($this) {
             self::Sync => ['tse:sincronizar', []],
             self::FullSync => ['tse:sincronizar', ['--eleicao' => [(string) $election?->tse_code], '--completo' => true]],
             self::Discover => ['tse:descobrir', []],
             self::Import => ['tse:importar', []],
-            self::Photos => ['tse:fotos', []],
-            self::ElectionPhotos => ['tse:fotos', ['--eleicao' => [(string) $election?->tse_code]]],
-            self::PastPhotos => ['tse:fotos', ['--encerradas' => true]],
+            self::Photos => ['tse:fotos', $minutes],
+            self::ElectionPhotos => ['tse:fotos', ['--eleicao' => [(string) $election?->tse_code], ...$minutes]],
+            self::PastPhotos => ['tse:fotos', ['--encerradas' => true, ...$minutes]],
             self::Map => ['mapa:baixar', []],
             self::ClearCache => ['resultados:limpar-cache', []],
         };
