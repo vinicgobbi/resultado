@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\NotificationCategory;
+use App\Jobs\SendPushBatch;
 use App\Models\Candidate;
 use App\Models\Election;
 use App\Models\PushFollow;
@@ -11,15 +12,20 @@ use App\Models\PushSubscription;
 use App\Models\Result;
 use App\Services\Tse\SyncEvent;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Turns what happened to the followed results into a message for each
- * follower who wants that kind of notification, then wakes their browsers.
+ * follower who wants that kind of notification, then wakes their browsers
+ * (in batches, on the queue).
  */
 class ResultNotifier
 {
     /** Names listed in a message before "e mais N". */
     private const int LISTED_NAMES = 3;
+
+    /** Messages written at a time, within the bound parameters of a query. */
+    private const int INSERT_CHUNK = 500;
 
     public function __construct(
         private readonly RaceOutcome $outcome,
@@ -28,7 +34,7 @@ class ResultNotifier
 
     /**
      * @param  list<SyncEvent>  $events
-     * @return int browsers woken up
+     * @return int browsers queued to be woken up
      */
     public function notify(array $events): int
     {
@@ -49,16 +55,18 @@ class ResultNotifier
 
             $now = now();
 
-            PushMessage::query()->insert(array_map(fn (PushFollow $follow): array => [
-                'push_subscription_id' => $follow->push_subscription_id,
-                ...$message,
-                'created_at' => $now,
-            ], $follows));
+            foreach (array_chunk($follows, self::INSERT_CHUNK) as $chunk) {
+                PushMessage::query()->insert(array_map(fn (PushFollow $follow): array => [
+                    'push_subscription_id' => $follow->push_subscription_id,
+                    ...$message,
+                    'created_at' => $now,
+                ], $chunk));
 
-            if ($event->category === NotificationCategory::Updates) {
-                PushFollow::query()
-                    ->whereKey(array_map(fn (PushFollow $follow): int => $follow->id, $follows))
-                    ->update(['last_update_notified_at' => $now]);
+                if ($event->category === NotificationCategory::Updates) {
+                    PushFollow::query()
+                        ->whereKey(array_map(fn (PushFollow $follow): int => $follow->id, $chunk))
+                        ->update(['last_update_notified_at' => $now]);
+                }
             }
 
             foreach ($follows as $follow) {
@@ -66,7 +74,7 @@ class ResultNotifier
             }
         }
 
-        return $this->webPush->send(PushSubscription::query()->whereKey(array_keys($subscriptionIds))->get());
+        return SendPushBatch::dispatchFor(array_keys($subscriptionIds));
     }
 
     /**
@@ -97,16 +105,11 @@ class ResultNotifier
      * Send a message written by an admin to the followers of a result, or to
      * every subscribed browser.
      *
-     * @return int browsers woken up
+     * @return int browsers queued to be woken up
      */
     public function announce(string $title, string $body, ?ResultPlace $place = null): int
     {
         $election = $place?->latestElection();
-        $subscriptions = PushSubscription::query()
-            ->when($place !== null, fn (Builder $query) => $query->whereHas('follows', fn (Builder $query) => $query
-                ->where('office', $place?->office)
-                ->where('scope_code', $place?->scopeCode)))
-            ->get();
         $message = [
             'title' => mb_substr($title, 0, 255),
             'body' => mb_substr($body, 0, 500),
@@ -115,15 +118,25 @@ class ResultNotifier
             'tag' => 'aviso-'.now()->getTimestamp(),
             'created_at' => now(),
         ];
+        $queued = 0;
 
-        foreach ($subscriptions->chunk(500) as $chunk) {
-            PushMessage::query()->insert($chunk->map(fn (PushSubscription $subscription): array => [
-                'push_subscription_id' => $subscription->id,
-                ...$message,
-            ])->values()->all());
-        }
+        PushSubscription::query()
+            ->when($place !== null, fn (Builder $query) => $query->whereHas('follows', fn (Builder $query) => $query
+                ->where('office', $place?->office)
+                ->where('scope_code', $place?->scopeCode)))
+            ->select('id')
+            ->chunkById(self::INSERT_CHUNK, function (Collection $subscriptions) use ($message, &$queued): void {
+                $ids = $subscriptions->modelKeys();
 
-        return $this->webPush->send($subscriptions);
+                PushMessage::query()->insert(array_map(fn (int $subscriptionId): array => [
+                    'push_subscription_id' => $subscriptionId,
+                    ...$message,
+                ], $ids));
+
+                $queued += SendPushBatch::dispatchFor($ids);
+            });
+
+        return $queued;
     }
 
     /**

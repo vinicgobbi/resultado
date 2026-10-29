@@ -2,11 +2,13 @@
 
 use App\Enums\Office;
 use App\Jobs\SendAnnouncement;
+use App\Jobs\SendPushBatch;
 use App\Models\PushDelivery;
 use App\Models\PushFollow;
 use App\Models\PushMessage;
 use App\Models\PushSubscription;
 use App\Models\User;
+use App\Services\ResultNotifier;
 use App\Services\WebPush;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -131,4 +133,19 @@ test('admins send a test notification to their own browser', function () {
     $this->actingAs($this->admin)
         ->post(route('admin.notifications.test'), ['endpoint' => 'https://fcm.googleapis.com/fcm/send/desconhecido'])
         ->assertSessionHas('error');
+});
+
+test('a large audience is woken up by several short jobs', function () {
+    Queue::fake([SendPushBatch::class]);
+    PushSubscription::query()->insert(array_map(fn (int $index): array => [
+        'endpoint' => "https://fcm.googleapis.com/fcm/send/{$index}",
+        'endpoint_hash' => PushSubscription::hashEndpoint("https://fcm.googleapis.com/fcm/send/{$index}"),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ], range(1, 450)));
+
+    expect(app(ResultNotifier::class)->announce('Aviso', 'Texto'))->toBe(450)
+        ->and(PushMessage::query()->count())->toBe(450);
+    Queue::assertPushed(SendPushBatch::class, 3);
+    Queue::assertPushed(SendPushBatch::class, fn (SendPushBatch $job): bool => count($job->subscriptionIds) <= SendPushBatch::SIZE);
 });
