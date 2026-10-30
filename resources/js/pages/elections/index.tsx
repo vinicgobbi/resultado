@@ -82,7 +82,7 @@ export default function ElectionsIndex({ cycles }: Props) {
                                             id={`eleicao-${cycle.cycle}`}
                                             className="text-2xl font-bold"
                                         >
-                                            Eleições {cycle.year}
+                                            {cycle.name}
                                         </h2>
                                         <StatusBadge status={cycle.status} />
                                     </div>

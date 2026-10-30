@@ -25,6 +25,9 @@ use Illuminate\Support\Collection as SupportCollection;
  * @property int $round
  * @property ElectionType $type
  * @property string $name
+ * @property string|null $display_name
+ * @property bool $is_hidden
+ * @property bool $is_featured
  * @property int|null $second_round_code
  * @property array{states: list<string>, municipalities: array<string, string>}|null $places
  * @property SupportCollection<int, Office> $offices
@@ -35,7 +38,7 @@ use Illuminate\Support\Collection as SupportCollection;
  * @property Carbon|null $updated_at
  */
 #[Fillable([
-    'tse_code', 'cycle', 'date', 'round', 'type', 'name', 'second_round_code', 'places', 'offices',
+    'tse_code', 'cycle', 'date', 'round', 'type', 'name', 'display_name', 'is_hidden', 'is_featured', 'second_round_code', 'places', 'offices',
     'available_until', 'last_synced_at', 'completed_at',
 ])]
 class Election extends Model
@@ -68,6 +71,8 @@ class Election extends Model
         return [
             'date' => 'date',
             'type' => ElectionType::class,
+            'is_hidden' => 'boolean',
+            'is_featured' => 'boolean',
             'places' => 'array',
             'offices' => AsEnumCollection::of(Office::class),
             'available_until' => 'date',
@@ -107,15 +112,22 @@ class Election extends Model
     /**
      * The election shown when none is chosen: one being counted, otherwise
      * the latest that already happened (the federal one of an election day
-     * first), otherwise the next one.
+     * first), otherwise the next one. Only among the elections of the year
+     * chosen in the admin, when there is one, and never a hidden one.
      */
     public static function current(?Office $office = null): ?self
     {
         $elections = self::query()
+            ->where('is_hidden', false)
             ->when($office !== null, fn (Builder $query) => $query->whereJsonContains('offices', $office?->value))
             ->get()
             ->sort(fn (self $a, self $b): int => [$b->date->getTimestamp(), $a->type->order()] <=> [$a->date->getTimestamp(), $b->type->order()])
             ->values();
+        $featured = $elections->first(fn (self $election): bool => $election->is_featured);
+
+        if ($featured !== null) {
+            $elections = $elections->where('cycle', $featured->cycle)->values();
+        }
 
         return $elections->first(fn (self $election): bool => $election->isLive())
             ?? $elections->first(fn (self $election): bool => $election->date->lte(today()))
@@ -167,15 +179,25 @@ class Election extends Model
     }
 
     /**
+     * Name of the year on the site: the one chosen in the admin, otherwise
+     * "Eleições 2026".
+     */
+    public function cycleName(): string
+    {
+        return $this->display_name ?? "Eleições {$this->date->year}";
+    }
+
+    /**
      * Data shown on the public pages.
      *
-     * @return array{code: int, cycle: string, name: string, date: string, year: int, round: int, type: string, status: string}
+     * @return array{code: int, cycle: string, cycle_name: string, name: string, date: string, year: int, round: int, type: string, status: string}
      */
     public function toPublicArray(): array
     {
         return [
             'code' => $this->tse_code,
             'cycle' => $this->cycle,
+            'cycle_name' => $this->cycleName(),
             'name' => $this->name,
             'date' => $this->date->toDateString(),
             'year' => $this->date->year,
@@ -192,11 +214,14 @@ class Election extends Model
      * opened on its federal part, and the whole opened on the latest round
      * that already took place.
      *
-     * @return list<array{cycle: string, year: int, code: int, status: string, offices: list<string>, rounds: list<array{round: int, code: int, date: string, status: string}>}>
+     * Years hidden in the admin are left out.
+     *
+     * @return list<array{cycle: string, name: string, year: int, code: int, status: string, offices: list<string>, rounds: list<array{round: int, code: int, date: string, status: string}>}>
      */
     public static function cycles(): array
     {
         return array_values(self::query()
+            ->where('is_hidden', false)
             ->get()
             ->groupBy('cycle')
             ->map(function (Collection $elections): array {
@@ -217,8 +242,12 @@ class Election extends Model
                     ->values();
                 $opened = $rounds->reverse()->first(fn (array $round): bool => $round['status'] !== 'agendada') ?? $rounds->first();
 
+                /** @var self $first */
+                $first = $elections->first();
+
                 return [
-                    'cycle' => (string) $elections->first()?->cycle,
+                    'cycle' => $first->cycle,
+                    'name' => $first->cycleName(),
                     'year' => (int) substr($rounds->first()['date'], 0, 4),
                     'code' => $opened['code'],
                     'status' => self::leastAdvanced($rounds->pluck('status')),

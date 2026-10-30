@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CandidateController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\ElectionController as AdminElectionController;
 use App\Http\Controllers\Admin\FailedJobController;
 use App\Http\Controllers\Admin\MaintenanceRunController;
 use App\Http\Controllers\Admin\PartyColorController;
@@ -65,6 +66,11 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/partidos', [PartyColorController::class, 'index'])->name('parties.index');
         Route::put('/partidos', [PartyColorController::class, 'update'])->name('parties.update');
+
+        Route::get('/eleicoes', [AdminElectionController::class, 'index'])->name('elections.index');
+        Route::post('/eleicoes/destaque', [AdminElectionController::class, 'feature'])->name('elections.feature');
+        Route::patch('/eleicoes/{cycle}', [AdminElectionController::class, 'update'])->name('elections.update');
+        Route::post('/eleicoes/{election}/reabrir', [AdminElectionController::class, 'reopen'])->name('elections.reopen');
 
         Route::get('/usuarios', [UserController::class, 'index'])->name('users.index');
         Route::post('/usuarios', [UserController::class, 'store'])->name('users.store');

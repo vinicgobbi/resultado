@@ -33,6 +33,8 @@ export type ElectionCycleRound = {
  */
 export type ElectionCycle = {
     cycle: string;
+    /** "Eleições 2026", or the name chosen in the admin. */
+    name: string;
     year: number;
     /** Election it opens on: the latest round that already took place. */
     code: number;
@@ -56,6 +58,8 @@ export type Election = {
     code: number;
     /** Year of the election, shared by its rounds ("ele2026"). */
     cycle: string;
+    /** "Eleições 2026", or the name chosen in the admin. */
+    cycle_name: string;
     name: string;
     date: string;
     year: number;

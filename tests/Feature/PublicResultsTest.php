@@ -509,6 +509,7 @@ test('the archive lists every election once, with its rounds', function () {
             ->has('cycles', 2)
             ->where('cycles.0', [
                 'cycle' => 'ele2026',
+                'name' => 'Eleições 2026',
                 'year' => 2026,
                 'code' => 6258,
                 'status' => 'apuracao',

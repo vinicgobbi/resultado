@@ -352,7 +352,7 @@ export default function ResultsIndex({
                         >
                             <PickerMenu
                                 label="Eleição"
-                                value={`Eleições ${election.year}`}
+                                value={election.cycle_name}
                             >
                                 <ul className="space-y-1">
                                     {cycles.map((cycle) => (
@@ -374,7 +374,7 @@ export default function ResultsIndex({
                                                 )}
                                             >
                                                 <span className="font-semibold">
-                                                    Eleições {cycle.year}
+                                                    {cycle.name}
                                                 </span>
                                                 <span className="text-sm text-muted">
                                                     {cycle.rounds
