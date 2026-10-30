@@ -58,6 +58,23 @@ enum Office: string
     }
 
     /**
+     * What the office is, in a few words for whoever chooses to follow it.
+     */
+    public function description(?State $state = null): string
+    {
+        return match ($this) {
+            self::President => 'Governa o país.',
+            self::Governor => 'Governa o estado.',
+            self::Senator => 'Representa o estado no Senado.',
+            self::FederalDeputy => 'Representam o estado na Câmara dos Deputados.',
+            self::StateDeputy => $state === State::DistritoFederal ? 'Fazem as leis do DF na Câmara Legislativa.' : 'Fazem as leis do estado na Assembleia Legislativa.',
+            self::Mayor => 'Governa a cidade.',
+            self::Councillor => 'Fazem as leis da cidade na Câmara Municipal.',
+            self::DistrictCouncillor => 'Representam os moradores no conselho do distrito.',
+        };
+    }
+
+    /**
      * Code of the office in the TSE file names.
      */
     public function tseCode(?State $state = null): string

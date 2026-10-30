@@ -5,14 +5,59 @@ use App\Models\Municipality;
 use App\Models\PushFollow;
 use App\Models\PushMessage;
 use App\Models\PushSubscription;
+use App\Models\Result;
 use App\Services\WebPush;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 
 const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/abc';
 
 beforeEach(function () {
     elections2026('2026-10-26 12:00:00');
     $this->subscription = PushSubscription::create(['endpoint' => ENDPOINT, 'endpoint_hash' => PushSubscription::hashEndpoint(ENDPOINT)]);
+});
+
+test('without a state, the notifications page only offers the offices of the country', function () {
+    $this->get(route('notifications.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('notifications/index')
+            ->has('states', 27)
+            ->where('state', null)
+            ->where('offices', [[
+                'office' => 'presidente',
+                'scope' => Result::SCOPE_COUNTRY,
+                'label' => 'Presidente',
+                'description' => 'Governa o país.',
+                'municipalities' => null,
+            ]])
+            ->where('municipalities', []));
+
+    $this->get(route('notifications.index', ['uf' => 'zz']))
+        ->assertInertia(fn (Assert $page) => $page->where('state', null)->has('offices', 1));
+});
+
+test('the notifications page offers every office where the visitor votes', function () {
+    Municipality::create(['tse_code' => '30015', 'state' => 'pe', 'name' => 'FERNANDO DE NORONHA']);
+    Municipality::create(['tse_code' => '25313', 'state' => 'pe', 'name' => 'RECIFE']);
+    Municipality::create(['tse_code' => '71072', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    Result::create([
+        'election_code' => 6261, 'office' => Office::DistrictCouncillor, 'scope' => Result::SCOPE_MUNICIPALITY, 'scope_code' => '30015',
+        'votes' => [], 'sections_total' => 1, 'sections_counted' => 1, 'counted_percent' => 100,
+    ]);
+
+    $this->get(route('notifications.index', ['uf' => 'pe']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('state', 'pe')
+            ->where('offices', fn ($offices): bool => collect($offices)->pluck('office')->all() === ['presidente', 'governador', 'senador', 'deputado-federal', 'deputado-estadual', 'prefeito', 'vereador', 'conselheiro-distrital'])
+            ->where('offices.5.municipalities', null)
+            ->where('offices.7.municipalities', ['30015'])
+            ->where('municipalities', [['code' => '30015', 'name' => 'FERNANDO DE NORONHA'], ['code' => '25313', 'name' => 'RECIFE']]));
+
+    $this->get(route('notifications.index', ['uf' => 'df']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('offices', fn ($offices): bool => collect($offices)->pluck('office')->all() === ['presidente', 'governador', 'senador', 'deputado-federal', 'deputado-estadual'])
+            ->where('offices.4.label', 'Deputado Distrital'));
 });
 
 test('a browser follows a result and lists what it follows', function () {

@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Office;
+use App\Enums\State;
 use App\Http\Requests\FollowResultRequest;
 use App\Jobs\SendFollowConfirmation;
+use App\Models\Municipality;
 use App\Models\PushFollow;
 use App\Models\PushMessage;
 use App\Models\PushSubscription;
+use App\Models\Result;
 use App\Services\ResultPlace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,12 +21,29 @@ use Inertia\Response as InertiaResponse;
 class PushFollowController extends Controller
 {
     /**
-     * Page listing what this browser follows (loaded by the page itself: the
-     * browser is only known by its push subscription).
+     * Page to choose what this browser follows where the visitor votes, and
+     * to manage it (follows are loaded by the page itself: the browser is
+     * only known by its push subscription).
      */
-    public function index(): InertiaResponse
+    public function index(Request $request): InertiaResponse
     {
-        return Inertia::render('notifications/index');
+        $state = State::tryFrom($request->string('uf')->toString());
+        $state = $state === State::Exterior ? null : $state;
+
+        return Inertia::render('notifications/index', [
+            'states' => array_values(array_map(
+                fn (State $state): array => ['code' => $state->value, 'name' => $state->label()],
+                array_filter(State::cases(), fn (State $state): bool => $state !== State::Exterior),
+            )),
+            'state' => $state?->value,
+            'offices' => fn (): array => $this->offices($state),
+            'municipalities' => fn (): array => $state === null ? [] : Municipality::query()
+                ->where('state', $state)
+                ->orderBy('name')
+                ->get(['tse_code', 'name'])
+                ->map(fn (Municipality $municipality): array => ['code' => $municipality->tse_code, 'name' => $municipality->name])
+                ->all(),
+        ]);
     }
 
     /**
@@ -110,6 +131,27 @@ class PushFollowController extends Controller
             ->map(fn (PushMessage $message): array => $message->only(['title', 'body', 'url', 'tag']))
             ->values()
             ->all())->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Offices that can be followed by whoever votes in the state, the
+     * country's first; without a state, only those of the country.
+     *
+     * @return list<array{office: string, scope: string, label: string, description: string, municipalities: list<string>|null}>
+     */
+    private function offices(?State $state): array
+    {
+        return array_values(array_map(fn (Office $office): array => [
+            'office' => $office->value,
+            'scope' => $office->electedScope(),
+            'label' => $office->label($state),
+            'description' => $office->description($state),
+            // Only disputed in a few municipalities: those with results.
+            'municipalities' => $office === Office::DistrictCouncillor
+                ? Result::query()->where('office', $office)->where('scope', Result::SCOPE_MUNICIPALITY)->distinct()->pluck('scope_code')->all()
+                : null,
+        ], array_filter(Office::cases(), fn (Office $office): bool => $office->isNationwide()
+            || ($state !== null && in_array($state, $office->states(), true)))));
     }
 
     private function subscription(string $endpoint): ?PushSubscription
