@@ -70,21 +70,25 @@ funcionando e agir sem precisar de acesso ao servidor.
 ### 5. Candidatos
 
 - [x] Trocar a cor de um candidato (e voltar à cor automática)
-- [ ] Corrigir o nome de urna
-- [ ] Enviar uma foto manualmente, quando o TSE não tem ou está bloqueando
-- [ ] Editar as cores padrão dos partidos (hoje fixas em `config/partidos.php`)
+- [x] Corrigir o nome de urna (a sincronização mantém a correção; vazio volta
+      ao nome do TSE)
+- [x] Enviar uma foto manualmente, quando o TSE não tem ou está bloqueando
+      (fica em `fotos/manuais`, fora do `fotos:apagar`)
+- [x] Editar as cores padrão dos partidos (a do admin vale por cima de
+      `config/partidos.php`)
 
 ### 6. Eleições
 
-- [ ] Escolher qual eleição aparece na página inicial
-- [ ] Esconder eleições do arquivo público
-- [ ] Reabrir a sincronização de uma eleição já concluída
-- [ ] Editar o nome de exibição de uma eleição
+- [x] Escolher qual eleição aparece na página inicial (ou automática)
+- [x] Esconder eleições do arquivo público (os links diretos continuam)
+- [x] Reabrir a sincronização de uma eleição já concluída
+- [x] Editar o nome de exibição de uma eleição (vale para o ano inteiro)
 
 ### Antes de publicar as mudanças do painel
 
 - Rodar as migrações (`push_follows`, `push_messages`, `maintenance_runs`,
-  `push_deliveries`, `site_notices`)
+  `push_deliveries`, `site_notices`, `party_colors` e as colunas novas de
+  `candidates` e `elections`)
 - Confirmar que o agendador (`schedule:run` no cron ou `schedule:work`) está
   ativo no servidor: é ele que inicia o worker da fila `admin`; sem isso, as
   tarefas ficam paradas em "Na fila"
