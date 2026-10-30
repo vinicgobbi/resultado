@@ -40,7 +40,7 @@ class RunOutput extends Output
         $this->buffer .= $message.($newline ? "\n" : '');
 
         if (strlen($this->buffer) > self::MAX_LENGTH) {
-            $this->buffer = substr($this->buffer, -self::MAX_LENGTH);
+            $this->buffer = mb_strcut($this->buffer, strlen($this->buffer) - self::MAX_LENGTH, encoding: 'UTF-8');
         }
 
         if ($this->cancelled || ($this->savedAt !== null && $this->savedAt->diffInSeconds(now()) < self::SAVE_EVERY_SECONDS)) {

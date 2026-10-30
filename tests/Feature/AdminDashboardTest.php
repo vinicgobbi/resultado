@@ -145,6 +145,18 @@ test('a running task stops at the next line its command prints once cancelled', 
     expect(fn () => $output->writeln('Depois'))->toThrow(MaintenanceRunCancelled::class);
 });
 
+test('a long output keeps only whole characters when its start is cut off', function () {
+    $run = MaintenanceRun::factory()->running()->create(['task' => MaintenanceTask::ClearCache]);
+    $output = new RunOutput($run);
+
+    $output->write(str_repeat('▓', 20_001).'a');
+    $output->save();
+
+    expect($run->refresh()->output)
+        ->toStartWith('▓')
+        ->and(mb_check_encoding($run->output, 'UTF-8'))->toBeTrue();
+});
+
 test('a finished task cannot be cancelled', function () {
     $run = MaintenanceRun::factory()->create(['status' => MaintenanceRun::DONE]);
 
