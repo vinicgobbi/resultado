@@ -196,7 +196,7 @@ class Election extends Model
      */
     public static function cycles(): array
     {
-        return self::query()
+        return array_values(self::query()
             ->get()
             ->groupBy('cycle')
             ->map(function (Collection $elections): array {
@@ -222,18 +222,16 @@ class Election extends Model
                     'year' => (int) substr($rounds->first()['date'], 0, 4),
                     'code' => $opened['code'],
                     'status' => self::leastAdvanced($rounds->pluck('status')),
-                    'offices' => $elections
+                    'offices' => array_values($elections
                         ->sortBy(fn (self $election): array => [$election->type->order(), $election->round])
                         ->flatMap(fn (self $election): array => $election->offices->map(fn (Office $office): string => $office->label())->all())
                         ->unique()
-                        ->values()
-                        ->all(),
-                    'rounds' => $rounds->all(),
+                        ->all()),
+                    'rounds' => array_values($rounds->all()),
                 ];
             })
             ->sortByDesc(fn (array $cycle): string => $cycle['rounds'][0]['date'])
-            ->values()
-            ->all();
+            ->all());
     }
 
     /**

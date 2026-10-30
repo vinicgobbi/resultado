@@ -31,10 +31,11 @@ class PushFollowController extends Controller
         $state = $state === State::Exterior ? null : $state;
 
         return Inertia::render('notifications/index', [
-            'states' => array_values(array_map(
-                fn (State $state): array => ['code' => $state->value, 'name' => $state->label()],
-                array_filter(State::cases(), fn (State $state): bool => $state !== State::Exterior),
-            )),
+            'states' => collect(State::cases())
+                ->reject(fn (State $state): bool => $state === State::Exterior)
+                ->map(fn (State $state): array => ['code' => $state->value, 'name' => $state->label()])
+                ->values()
+                ->all(),
             'state' => $state?->value,
             'offices' => fn (): array => $this->offices($state),
             'municipalities' => fn (): array => $state === null ? [] : Municipality::query()
@@ -148,7 +149,13 @@ class PushFollowController extends Controller
             'description' => $office->description($state),
             // Only disputed in a few municipalities: those with results.
             'municipalities' => $office === Office::DistrictCouncillor
-                ? Result::query()->where('office', $office)->where('scope', Result::SCOPE_MUNICIPALITY)->distinct()->pluck('scope_code')->all()
+                ? array_values(Result::query()
+                    ->where('office', $office)
+                    ->where('scope', Result::SCOPE_MUNICIPALITY)
+                    ->distinct()
+                    ->get(['scope_code'])
+                    ->map(fn (Result $result): string => $result->scope_code)
+                    ->all())
                 : null,
         ], array_filter(Office::cases(), fn (Office $office): bool => $office->isNationwide()
             || ($state !== null && in_array($state, $office->states(), true)))));

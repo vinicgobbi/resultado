@@ -167,7 +167,7 @@ class ResultsController extends Controller
     {
         $officeLabel = $office->label($state);
 
-        return Election::query()
+        return array_values(Election::query()
             ->where('cycle', $election->cycle)
             ->get()
             ->groupBy('round')
@@ -190,12 +190,11 @@ class ResultsController extends Controller
                     'round' => $round,
                     'date' => $first->date->toDateString(),
                     'status' => $first->status(),
-                    'code' => $unavailable === null ? $holder?->tse_code : null,
+                    'code' => $unavailable === null ? $holder->tse_code : null,
                     'unavailable' => $unavailable,
                 ];
             })
-            ->values()
-            ->all();
+            ->all());
     }
 
     /**
