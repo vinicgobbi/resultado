@@ -30,7 +30,8 @@ funcionando e agir sem precisar de acesso ao servidor.
 - [x] Ressincronizar uma eleição por completo (botão na linha da eleição)
 - [x] Descobrir eleições novas (`tse:descobrir`)
 - [x] Importar eleições encerradas (`tse:importar`)
-- [x] Baixar fotos da eleição atual (`tse:fotos`)
+- [x] Baixar fotos da eleição atual, com os dois turnos (`tse:fotos`); fora
+      da apuração, isso também acontece sozinho a cada hora
 - [x] Baixar fotos de uma eleição (botão na linha da eleição)
 - [x] Baixar fotos das eleições encerradas (`tse:fotos --encerradas`)
 - [x] Gerar o mapa (`mapa:baixar`)

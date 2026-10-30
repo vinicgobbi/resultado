@@ -20,8 +20,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 
 #[Signature('tse:fotos
-    {--eleicao=* : Códigos do TSE das eleições (padrão: as da eleição atual)}
+    {--eleicao=* : Códigos do TSE das eleições (padrão: a eleição vigente, com os dois turnos)}
     {--encerradas : Todas as eleições já encerradas, da mais recente para a mais antiga}
+    {--fora-da-apuracao : Não roda, e para, enquanto houver eleição em apuração (o TSE é necessário para os resultados)}
     {--cargo=* : Cargos a baixar (padrão: todos), ex.: --cargo=governador}
     {--sem-espera : Para no primeiro 429 em vez de esperar a pausa e continuar}
     {--minutos= : Para depois de tantos minutos; a próxima execução continua de onde parou}
@@ -86,8 +87,8 @@ class DownloadCandidatePhotos extends Command
             return self::FAILURE;
         }
 
-        if ($this->option('encerradas') && Election::query()->live()->exists()) {
-            $this->components->info('Há eleição em apuração; as fotos das encerradas ficam para depois.');
+        if ($this->pausesDuringCount() && Election::query()->live()->exists()) {
+            $this->components->info('Há eleição em apuração; as fotos ficam para depois.');
 
             return self::SUCCESS;
         }
@@ -276,7 +277,7 @@ class DownloadCandidatePhotos extends Command
             }
 
             // The counting of a new election needs the TSE more than the past.
-            if ($this->option('encerradas') && Election::query()->live()->exists()) {
+            if ($this->pausesDuringCount() && Election::query()->live()->exists()) {
                 $this->newLine(2);
                 $this->components->info('Uma eleição entrou em apuração; as fotos continuam depois, de onde pararam.');
 
@@ -311,6 +312,15 @@ class DownloadCandidatePhotos extends Command
     }
 
     /**
+     * Whether the run gives way to the count of an election: past elections
+     * always, the others when asked (the scheduled runs).
+     */
+    private function pausesDuringCount(): bool
+    {
+        return (bool) $this->option('encerradas') || (bool) $this->option('fora-da-apuracao');
+    }
+
+    /**
      * Sleep until the given moment, printing a line now and then: a long
      * silence looks stuck and keeps a cancelled run from stopping.
      */
@@ -331,7 +341,8 @@ class DownloadCandidatePhotos extends Command
     /**
      * Elections whose candidates are downloaded, by the first round (where
      * the candidates are registered): the chosen ones, every one already
-     * over, or the current ones (the others are downloaded when first shown).
+     * over, or the current one with both its rounds (the others are
+     * downloaded when first shown).
      *
      * @return list<int>
      */
@@ -345,7 +356,9 @@ class DownloadCandidatePhotos extends Command
                 ->whereDate('date', '<', today()->subDays(Election::LIVE_DAYS))
                 ->orderByDesc('date')
                 ->get(),
-            default => Election::current()?->siblings() ?? collect(),
+            default => ($current = Election::current()) === null
+                ? collect()
+                : Election::query()->where('cycle', $current->cycle)->get(),
         };
 
         return array_values(array_unique(array_filter(

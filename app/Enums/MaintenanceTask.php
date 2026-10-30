@@ -43,7 +43,7 @@ enum MaintenanceTask: string
             self::FullSync => 'Baixa de novo todos os resultados de uma eleição, mesmo os que não mudaram.',
             self::Discover => 'Procura no índice do TSE eleições que ainda não estão cadastradas.',
             self::Import => 'Importa as eleições encerradas que ainda não foram baixadas.',
-            self::Photos => 'Baixa do TSE as fotos que faltam dos candidatos da eleição atual, sem provocar bloqueio.',
+            self::Photos => 'Baixa do TSE as fotos que faltam dos candidatos da eleição atual (1º e 2º turno), sem provocar bloqueio. Fora da apuração, isso também acontece sozinho a cada hora.',
             self::ElectionPhotos => 'Baixa do TSE as fotos que faltam dos candidatos de uma eleição.',
             self::PastPhotos => 'Baixa as fotos que faltam de todas as eleições encerradas, da mais recente para a mais antiga. As municipais têm centenas de milhares de candidatos: pode levar horas e ocupar alguns GB. A cada 4 horas a tarefa recomeça sozinha de onde parou.',
             self::Map => 'Baixa a malha do IBGE e gera de novo a geometria do mapa.',

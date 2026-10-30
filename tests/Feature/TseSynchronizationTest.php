@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\DownloadCandidatePhotos;
+use App\Enums\ElectionType;
 use App\Enums\Office;
 use App\Enums\State;
 use App\Jobs\SendResultsNotification;
@@ -671,6 +672,40 @@ test('the photos of past elections are downloaded, majority offices first, but n
 
     $this->artisan('tse:fotos', ['--encerradas' => true])->assertSuccessful();
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($councillor->tse_sequence));
+});
+
+test('the photos command downloads both rounds of the current election', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    // Only in the first round: district councillors have no runoff.
+    Election::factory()->create([
+        'tse_code' => 6261, 'cycle' => 'ele2026', 'date' => '2026-10-04', 'round' => 1,
+        'type' => ElectionType::Municipal, 'offices' => [Office::DistrictCouncillor],
+    ]);
+    $councillor = Candidate::factory()->running(Office::DistrictCouncillor, State::Pernambuco, '30015')->create(['election_code' => 6261]);
+    Http::fake(["*/6261/fotos/pe/{$councillor->tse_sequence}.jpeg" => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+
+    // 2026-10-25: the runoff is on screen, the councillors are in the first round.
+    $this->artisan('tse:fotos')->assertSuccessful();
+
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($councillor->tse_sequence));
+});
+
+test('the scheduled photos of the current election wait for the count to end', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    $candidate = Candidate::factory()->create();
+    Http::fake(['*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+
+    $this->artisan('tse:fotos', ['--fora-da-apuracao' => true])
+        ->expectsOutputToContain('Há eleição em apuração')
+        ->assertSuccessful();
+    Http::assertNothingSent();
+
+    $this->travelTo('2026-11-10 12:00:00');
+    $this->artisan('tse:fotos', ['--fora-da-apuracao' => true])->assertSuccessful();
+
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($candidate->tse_sequence));
 });
 
 test('the photos command waits for the pause after a 429 and continues', function () {

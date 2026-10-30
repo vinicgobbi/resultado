@@ -28,13 +28,23 @@ Schedule::command('tse:importar --revisar')
     ->withoutOverlapping(360)
     ->runInBackground();
 
+// Photos of the current election, both rounds and every office (majority
+// ones first). Not while it is counted: a 429 would also pause the results,
+// and the photos shown are downloaded when first requested anyway. Stops on
+// a 429 or after 25 minutes, and resumes on the next run.
+Schedule::command('tse:fotos --fora-da-apuracao --sem-espera --minutos=25')
+    ->hourlyAt(30)
+    ->withoutOverlapping(30)
+    ->runInBackground();
+
 // Photos of past elections, like their results: only the majority offices
 // (a few thousand, shown in big); deputies and councillors are hundreds of
 // thousands, downloaded from the dashboard or when first shown. Stops on a
-// 429 and while an election is counted, and resumes on the next run.
-Schedule::command('tse:fotos --encerradas --sem-espera --cargo=presidente --cargo=governador --cargo=senador --cargo=prefeito')
+// 429, while an election is counted or after 25 minutes (never at the same
+// time as the current election's), and resumes on the next run.
+Schedule::command('tse:fotos --encerradas --sem-espera --minutos=25 --cargo=presidente --cargo=governador --cargo=senador --cargo=prefeito')
     ->hourly()
-    ->withoutOverlapping(120)
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 // Old push messages, deliveries and task runs, and the expired keys of the
