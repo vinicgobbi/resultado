@@ -794,6 +794,29 @@ test('the photos command continues from where the last run stopped', function ()
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($president->tse_sequence));
 });
 
+test('deleting the photos says so when the files could not be deleted', function () {
+    Storage::fake(Candidate::PHOTO_DISK);
+    $candidate = Candidate::factory()->create();
+    $disk = Storage::disk(Candidate::PHOTO_DISK);
+    $disk->put(Candidate::photoPath($candidate->tse_sequence), 'stored');
+    $directory = $disk->path(dirname(Candidate::photoPath($candidate->tse_sequence)));
+    // Like photos written by another system user: nothing can be removed.
+    chmod($directory, 0555);
+    $version = ResultSynchronizer::version(6258);
+
+    try {
+        $this->artisan('fotos:apagar', ['--force' => true])
+            ->expectsOutputToContain('1 fotos não puderam ser apagadas (0 apagadas, 0 B liberados)')
+            ->doesntExpectOutputToContain('apagadas.')
+            ->assertFailed();
+    } finally {
+        chmod($directory, 0755);
+    }
+
+    $disk->assertExists(Candidate::photoPath($candidate->tse_sequence));
+    expect(ResultSynchronizer::version(6258))->toBe($version);
+});
+
 test('after deleting the photos, the photos command checks every candidate again', function () {
     Http::preventStrayRequests();
     Storage::fake(Candidate::PHOTO_DISK);
