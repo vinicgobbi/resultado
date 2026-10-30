@@ -35,7 +35,7 @@ final readonly class ResultPlace
     {
         return match ($this->office->electedScope()) {
             Result::SCOPE_STATE => State::tryFrom($this->scopeCode),
-            Result::SCOPE_MUNICIPALITY => State::tryFrom((string) Municipality::query()->where('tse_code', $this->scopeCode)->value('state')),
+            Result::SCOPE_MUNICIPALITY => Municipality::query()->where('tse_code', $this->scopeCode)->first(['state'])?->state,
             default => null,
         };
     }

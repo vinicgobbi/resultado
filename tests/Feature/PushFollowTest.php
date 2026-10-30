@@ -36,6 +36,15 @@ test('a browser follows a result and lists what it follows', function () {
         ]]);
 });
 
+test('a browser lists the municipal offices it follows', function () {
+    Municipality::create(['tse_code' => '71072', 'ibge_code' => '3550308', 'state' => 'sp', 'name' => 'SÃO PAULO']);
+    $this->subscription->follows()->create(['office' => Office::Mayor, 'scope_code' => '71072']);
+
+    $this->postJson(route('notifications.following'), ['endpoint' => ENDPOINT])
+        ->assertOk()
+        ->assertJsonPath('0.label', 'Prefeito · SÃO PAULO (SP)');
+});
+
 test('a browser that starts following a result gets a confirmation', function () {
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
     Http::fake([ENDPOINT => Http::response('', 201)]);
