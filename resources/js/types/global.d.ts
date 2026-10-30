@@ -1,4 +1,5 @@
 import type { Auth } from '@/types/auth';
+import type { SiteNotice } from '@/types/site';
 
 declare module 'react' {
     interface InputHTMLAttributes<T> {
@@ -18,6 +19,8 @@ declare module '@inertiajs/core' {
             push: {
                 publicKey: string | null;
             };
+            /** Notices shown now at the top of every page. */
+            notices: SiteNotice[];
             [key: string]: unknown;
         };
     }

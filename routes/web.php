@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FailedJobController;
 use App\Http\Controllers\Admin\MaintenanceRunController;
 use App\Http\Controllers\Admin\PushNotificationController;
+use App\Http\Controllers\Admin\SiteNoticeController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CandidatePhotoController;
@@ -52,6 +53,11 @@ Route::middleware('auth')->group(function () {
 
         Route::post('/notificacoes/aviso', [PushNotificationController::class, 'announce'])->name('notifications.announce');
         Route::post('/notificacoes/teste', [PushNotificationController::class, 'test'])->name('notifications.test');
+
+        Route::get('/avisos', [SiteNoticeController::class, 'index'])->name('site-notices.index');
+        Route::post('/avisos', [SiteNoticeController::class, 'store'])->name('site-notices.store');
+        Route::put('/avisos/{siteNotice}', [SiteNoticeController::class, 'update'])->name('site-notices.update');
+        Route::delete('/avisos/{siteNotice}', [SiteNoticeController::class, 'destroy'])->name('site-notices.destroy');
 
         Route::get('/candidatos', [CandidateController::class, 'index'])->name('candidates.index');
         Route::patch('/candidatos/{candidate}', [CandidateController::class, 'update'])->name('candidates.update');

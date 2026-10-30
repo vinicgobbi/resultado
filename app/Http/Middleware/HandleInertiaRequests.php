@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\SiteNotice;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -48,6 +49,19 @@ class HandleInertiaRequests extends Middleware
             'push' => [
                 'publicKey' => config('services.webpush.public_key'),
             ],
+            // Only on full visits: polling reloads leave it out.
+            'notices' => fn (): array => SiteNotice::query()
+                ->active()
+                ->latest('id')
+                ->get()
+                ->map(fn (SiteNotice $notice): array => [
+                    'id' => $notice->id,
+                    'message' => $notice->message,
+                    'level' => $notice->level->value,
+                    // Changes when edited, so a closed notice shows again.
+                    'version' => $notice->updated_at?->getTimestamp() ?? 0,
+                ])
+                ->all(),
         ];
     }
 }
