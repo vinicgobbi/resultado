@@ -6,7 +6,6 @@ import CountProgress from '@/components/count-progress';
 import HowToRead from '@/components/how-to-read';
 import MunicipalityPanel from '@/components/municipality-panel';
 import MunicipalityPicker from '@/components/municipality-picker';
-import FollowButton from '@/components/follow-button';
 import PickerMenu from '@/components/picker-menu';
 import ResultsMap from '@/components/results-map';
 import RunoffNotice from '@/components/runoff-notice';
@@ -325,7 +324,7 @@ export default function ResultsIndex({
                                 className="flex min-h-11 items-center gap-1.5 rounded-full border-2 border-line-strong px-4 font-semibold hover:border-primary hover:bg-primary-soft"
                             >
                                 <span aria-hidden="true">🔔</span>
-                                Minhas notificações
+                                Notificações
                             </Link>
                         </div>
                     </div>
@@ -413,21 +412,6 @@ export default function ResultsIndex({
                                         href={municipalityHref}
                                     />
                                 </PickerMenu>
-                            )}
-
-                            {placeChosen && (
-                                <FollowButton
-                                    key={`${office}-${state}-${municipality?.code}`}
-                                    office={office}
-                                    scopeCode={
-                                        isNationwide
-                                            ? 'br'
-                                            : isMunicipal
-                                              ? municipality!.code
-                                              : state!.toLowerCase()
-                                    }
-                                    label={`${officeLabel} · ${placeName ?? 'Brasil'}`}
-                                />
                             )}
                         </nav>
 
