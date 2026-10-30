@@ -18,6 +18,7 @@ enum MaintenanceTask: string
     case Photos = 'fotos';
     case ElectionPhotos = 'fotos-eleicao';
     case PastPhotos = 'fotos-encerradas';
+    case DeletePhotos = 'apagar-fotos';
     case Map = 'mapa';
     case ClearCache = 'limpar-cache';
 
@@ -31,6 +32,7 @@ enum MaintenanceTask: string
             self::Photos => 'Baixar fotos da eleição atual',
             self::ElectionPhotos => 'Baixar fotos da eleição',
             self::PastPhotos => 'Baixar fotos das eleições encerradas',
+            self::DeletePhotos => 'Apagar todas as fotos',
             self::Map => 'Gerar o mapa',
             self::ClearCache => 'Limpar o cache dos resultados',
         };
@@ -46,6 +48,7 @@ enum MaintenanceTask: string
             self::Photos => 'Baixa do TSE as fotos que faltam dos candidatos da eleição atual (1º e 2º turno), sem provocar bloqueio. Fora da apuração, isso também acontece sozinho a cada hora.',
             self::ElectionPhotos => 'Baixa do TSE as fotos que faltam dos candidatos de uma eleição.',
             self::PastPhotos => 'Baixa as fotos que faltam de todas as eleições encerradas, da mais recente para a mais antiga. As municipais têm centenas de milhares de candidatos: pode levar horas e ocupar alguns GB. A cada 4 horas a tarefa recomeça sozinha de onde parou.',
+            self::DeletePhotos => 'Apaga do servidor as fotos de todos os candidatos, para liberar espaço ou baixá-las de novo. Elas voltam a ser baixadas quando aparecem no site e pelas tarefas de fotos.',
             self::Map => 'Baixa a malha do IBGE e gera de novo a geometria do mapa.',
             self::ClearCache => 'Faz as páginas de resultados serem calculadas de novo na próxima visita.',
         };
@@ -97,6 +100,7 @@ enum MaintenanceTask: string
             self::Photos => ['tse:fotos', $minutes],
             self::ElectionPhotos => ['tse:fotos', ['--eleicao' => [(string) $election?->tse_code], ...$minutes]],
             self::PastPhotos => ['tse:fotos', ['--encerradas' => true, ...$minutes]],
+            self::DeletePhotos => ['fotos:apagar', ['--force' => true]],
             self::Map => ['mapa:baixar', []],
             self::ClearCache => ['resultados:limpar-cache', []],
         };

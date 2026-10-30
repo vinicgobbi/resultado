@@ -34,6 +34,8 @@ funcionando e agir sem precisar de acesso ao servidor.
       da apuração, isso também acontece sozinho a cada hora
 - [x] Baixar fotos de uma eleição (botão na linha da eleição)
 - [x] Baixar fotos das eleições encerradas (`tse:fotos --encerradas`)
+- [x] Apagar todas as fotos do servidor (`fotos:apagar`), para liberar espaço
+      ou baixá-las de novo
 - [x] Gerar o mapa (`mapa:baixar`)
 - [x] Limpar o cache dos resultados (`resultados:limpar-cache`)
 - [x] Histórico das execuções: quem iniciou, estado e saída do comando ao vivo

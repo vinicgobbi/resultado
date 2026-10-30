@@ -1,0 +1,63 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Candidate;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+
+#[Signature('fotos:apagar
+    {--force : Apaga sem pedir confirmação}')]
+#[Description('Apaga do servidor todas as fotos dos candidatos baixadas do TSE')]
+class DeleteCandidatePhotos extends Command
+{
+    /**
+     * Execute the console command. The pages then link the photos to the
+     * route that downloads them again when first shown, and the photos
+     * command checks every candidate again.
+     */
+    public function handle(): int
+    {
+        $disk = Storage::disk(Candidate::PHOTO_DISK);
+        $directory = dirname(Candidate::photoPath('0'));
+        $files = $disk->allFiles($directory);
+
+        if ($files === []) {
+            $this->components->info('Não há fotos no servidor.');
+
+            return self::SUCCESS;
+        }
+
+        $bytes = array_sum(array_map(fn (string $file): int => $disk->size($file), $files));
+        $summary = sprintf('%s fotos (%s)', number_format(count($files), 0, ',', '.'), $this->readableSize($bytes));
+
+        if (! $this->option('force') && ! $this->confirm("Apagar {$summary}? Elas são baixadas de novo quando aparecerem ou pelas tarefas de fotos.")) {
+            $this->components->info('Nada foi apagado.');
+
+            return self::SUCCESS;
+        }
+
+        $disk->deleteDirectory($directory);
+        Cache::forever(DownloadCandidatePhotos::GENERATION_KEY, (int) Cache::get(DownloadCandidatePhotos::GENERATION_KEY, 0) + 1);
+        // The cached results link each photo to its file while it existed.
+        $this->call('resultados:limpar-cache');
+
+        $this->components->info("{$summary} apagadas.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * "3,4 GB", "820 MB".
+     */
+    private function readableSize(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $power = $bytes > 0 ? min((int) floor(log($bytes, 1024)), count($units) - 1) : 0;
+
+        return number_format($bytes / (1024 ** $power), $power > 1 ? 1 : 0, ',', '.').' '.$units[$power];
+    }
+}

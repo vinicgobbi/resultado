@@ -58,6 +58,12 @@ class DownloadCandidatePhotos extends Command
      */
     private const int WAIT_STEP_SECONDS = 60;
 
+    /**
+     * Changes when the photos are deleted, so every run checks all the
+     * candidates again instead of continuing from where it stopped.
+     */
+    public const string GENERATION_KEY = 'tse:fotos.geracao';
+
     private const string DONE = 'concluido';
 
     private const string STOPPED = 'parado';
@@ -117,7 +123,11 @@ class DownloadCandidatePhotos extends Command
             ->filter(fn (array $part): bool => $counts->has("{$part[0]->value}-{$part[1]}"))
             ->values()
             ->all();
-        $cursorKey = 'tse:fotos.cursor.'.md5(json_encode([$codes, array_map(fn (Office $office): string => $office->value, $offices)], JSON_THROW_ON_ERROR));
+        $cursorKey = 'tse:fotos.cursor.'.md5(json_encode([
+            $codes,
+            array_map(fn (Office $office): string => $office->value, $offices),
+            Cache::get(self::GENERATION_KEY, 0),
+        ], JSON_THROW_ON_ERROR));
 
         if ($this->option('do-inicio')) {
             Cache::forget($cursorKey);

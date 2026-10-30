@@ -95,6 +95,12 @@ const HEAVY = [
     'mapa',
 ];
 
+/** Tasks that cannot be undone: confirmed with what they remove. */
+const DESTRUCTIVE: Record<string, string> = {
+    'apagar-fotos':
+        'Apagar todas as fotos dos candidatos do servidor? Não dá para desfazer: elas só voltam baixando de novo do TSE.',
+};
+
 const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
     'na-fila': { label: 'Na fila', className: 'bg-primary-soft text-primary' },
     executando: {
@@ -225,7 +231,11 @@ export default function Dashboard({
     function start(task: Task, election?: ElectionRow) {
         const name = election ? `${task.label} (${election.name})` : task.label;
 
-        if (
+        if (DESTRUCTIVE[task.value]) {
+            if (!window.confirm(DESTRUCTIVE[task.value])) {
+                return;
+            }
+        } else if (
             HEAVY.includes(task.value) &&
             !window.confirm(`${name}: pode levar vários minutos. Continuar?`)
         ) {
@@ -495,11 +505,18 @@ export default function Dashboard({
                                         starting !== null
                                     }
                                     onClick={() => start(task)}
-                                    className="mt-auto min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50"
+                                    className={cn(
+                                        'mt-auto min-h-11 rounded-xl px-4 font-semibold disabled:opacity-50',
+                                        DESTRUCTIVE[task.value]
+                                            ? 'border-2 border-live text-live hover:bg-live-soft'
+                                            : 'bg-primary text-on-primary hover:bg-primary-hover',
+                                    )}
                                 >
                                     {busy.has(`${task.value}-`)
                                         ? 'Em andamento…'
-                                        : 'Executar'}
+                                        : DESTRUCTIVE[task.value]
+                                          ? 'Apagar'
+                                          : 'Executar'}
                                 </button>
                             </li>
                         ))}

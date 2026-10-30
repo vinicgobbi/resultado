@@ -708,6 +708,34 @@ test('the scheduled photos of the current election wait for the count to end', f
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($candidate->tse_sequence));
 });
 
+test('every photo can be deleted from the server, after a confirmation', function () {
+    Storage::fake(Candidate::PHOTO_DISK);
+    [$first, $second] = Candidate::factory()->count(2)->create();
+
+    $this->artisan('fotos:apagar')->expectsOutputToContain('Não há fotos no servidor.')->assertSuccessful();
+
+    foreach ([$first, $second] as $candidate) {
+        Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($candidate->tse_sequence), str_repeat('x', 1024));
+    }
+
+    $this->artisan('fotos:apagar')
+        ->expectsConfirmation('Apagar 2 fotos (2 KB)? Elas são baixadas de novo quando aparecerem ou pelas tarefas de fotos.', 'no')
+        ->expectsOutputToContain('Nada foi apagado.')
+        ->assertSuccessful();
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($first->tse_sequence));
+
+    $version = ResultSynchronizer::version(6258);
+
+    $this->artisan('fotos:apagar', ['--force' => true])
+        ->expectsOutputToContain('2 fotos (2 KB) apagadas.')
+        ->assertSuccessful();
+
+    Storage::disk(Candidate::PHOTO_DISK)->assertMissing(Candidate::photoPath($first->tse_sequence));
+    Storage::disk(Candidate::PHOTO_DISK)->assertMissing(Candidate::photoPath($second->tse_sequence));
+    // The cached results linked the photos to their files.
+    expect(ResultSynchronizer::version(6258))->toBe($version + 1);
+});
+
 test('the photos command waits for the pause after a 429 and continues', function () {
     Http::preventStrayRequests();
     Storage::fake(Candidate::PHOTO_DISK);
@@ -762,6 +790,32 @@ test('the photos command continues from where the last run stopped', function ()
     $this->artisan('tse:fotos')
         ->doesntExpectOutputToContain('Continuando')
         ->expectsOutputToContain('1 fotos baixadas')
+        ->assertSuccessful();
+    Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($president->tse_sequence));
+});
+
+test('after deleting the photos, the photos command checks every candidate again', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    $president = Candidate::factory()->create();
+    $governor = Candidate::factory()->running(Office::Governor, State::SaoPaulo)->create();
+    $blocked = true;
+    Http::fake(function (Request $request) use (&$blocked, $governor) {
+        return $blocked && str_contains($request->url(), $governor->tse_sequence)
+            ? Http::response('', 429)
+            : Http::response("\xFF\xD8\xFF\xE0fake-jpeg");
+    });
+
+    // Stops on the governor, with the president kept as checked.
+    $this->artisan('tse:fotos', ['--sem-espera' => true])->assertFailed();
+
+    $this->travel(1)->hour();
+    $blocked = false;
+    $this->artisan('fotos:apagar', ['--force' => true])->assertSuccessful();
+
+    $this->artisan('tse:fotos')
+        ->doesntExpectOutputToContain('Continuando')
+        ->expectsOutputToContain('2 fotos baixadas')
         ->assertSuccessful();
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($president->tse_sequence));
 });
