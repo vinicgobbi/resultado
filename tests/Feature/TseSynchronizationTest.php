@@ -794,6 +794,27 @@ test('the photos command continues from where the last run stopped', function ()
     Storage::disk(Candidate::PHOTO_DISK)->assertExists(Candidate::photoPath($president->tse_sequence));
 });
 
+test('a photo that could not be saved counts as failed, not downloaded', function () {
+    Http::preventStrayRequests();
+    Storage::fake(Candidate::PHOTO_DISK);
+    $candidate = Candidate::factory()->create();
+    Http::fake(['*' => Http::response("\xFF\xD8\xFF\xE0fake-jpeg")]);
+    $disk = Storage::disk(Candidate::PHOTO_DISK);
+    $directory = $disk->path(dirname(Candidate::photoPath($candidate->tse_sequence)));
+    // Like a folder of another system user: nothing can be written.
+    mkdir($directory, 0555, true);
+
+    try {
+        $this->artisan('tse:fotos')
+            ->expectsOutputToContain('0 fotos baixadas, 0 sem foto no TSE, 1 falharam')
+            ->assertFailed();
+    } finally {
+        chmod($directory, 0755);
+    }
+
+    $disk->assertMissing(Candidate::photoPath($candidate->tse_sequence));
+});
+
 test('deleting the photos says so when the files could not be deleted', function () {
     Storage::fake(Candidate::PHOTO_DISK);
     $candidate = Candidate::factory()->create();

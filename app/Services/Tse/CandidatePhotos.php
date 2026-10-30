@@ -89,9 +89,12 @@ class CandidatePhotos
                 $over = $candidate->election?->completed_at !== null;
                 Cache::put(self::missingKey($candidate), true, now()->addDays($over ? self::MISSING_DAYS_AFTER_ELECTION : self::MISSING_DAYS));
                 $totals['missing']++;
-            } else {
-                Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($candidate->tse_sequence), $photo);
+            } elseif (Storage::disk(Candidate::PHOTO_DISK)->put(Candidate::photoPath($candidate->tse_sequence), $photo)) {
                 $totals['downloaded']++;
+            } else {
+                // The disk does not throw: a photo it could not write (a folder
+                // of another system user) is a failure, retried on the next run.
+                $totals['failed']++;
             }
         }
 
