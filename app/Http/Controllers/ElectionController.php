@@ -9,12 +9,12 @@ use Inertia\Response;
 class ElectionController extends Controller
 {
     /**
-     * Every election day, the most recent first.
+     * Every election, the most recent first, with its rounds.
      */
     public function index(): Response
     {
         return Inertia::render('elections/index', [
-            'days' => Election::days(),
+            'cycles' => Election::cycles(),
         ]);
     }
 }

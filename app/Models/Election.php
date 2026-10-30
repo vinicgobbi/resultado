@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 
 /**
  * An election published by the TSE, discovered from its elections index.
@@ -26,7 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property int|null $second_round_code
  * @property array{states: list<string>, municipalities: array<string, string>}|null $places
- * @property \Illuminate\Support\Collection<int, Office> $offices
+ * @property SupportCollection<int, Office> $offices
  * @property Carbon|null $available_until
  * @property Carbon|null $last_synced_at
  * @property Carbon|null $completed_at
@@ -168,12 +169,13 @@ class Election extends Model
     /**
      * Data shown on the public pages.
      *
-     * @return array{code: int, name: string, date: string, year: int, round: int, type: string, status: string}
+     * @return array{code: int, cycle: string, name: string, date: string, year: int, round: int, type: string, status: string}
      */
     public function toPublicArray(): array
     {
         return [
             'code' => $this->tse_code,
+            'cycle' => $this->cycle,
             'name' => $this->name,
             'date' => $this->date->toDateString(),
             'year' => $this->date->year,
@@ -184,41 +186,65 @@ class Election extends Model
     }
 
     /**
-     * Election days, the most recent first: the elections of the same day
-     * and round (federal, state and municipal) are shown as one, opened on
-     * the federal one.
+     * Elections of each year, the most recent first. The TSE publishes each
+     * round (and each of its federal, state and municipal parts) as a
+     * separate election; here a year is one election with its rounds, each
+     * opened on its federal part, and the whole opened on the latest round
+     * that already took place.
      *
-     * @return array<int, array{code: int, year: int, round: int, date: string, status: string, offices: array<int, string>}>
+     * @return list<array{cycle: string, year: int, code: int, status: string, offices: list<string>, rounds: list<array{round: int, code: int, date: string, status: string}>}>
      */
-    public static function days(): array
+    public static function cycles(): array
     {
         return self::query()
             ->get()
-            ->groupBy(fn (self $election): string => "{$election->date->toDateString()}-{$election->round}")
+            ->groupBy('cycle')
             ->map(function (Collection $elections): array {
-                $elections = $elections->sortBy(fn (self $election): int => $election->type->order())->values();
-                /** @var self $first */
-                $first = $elections->first();
-                $statuses = $elections->map(fn (self $election): string => $election->status());
+                $rounds = $elections
+                    ->groupBy('round')
+                    ->sortKeys()
+                    ->map(function (Collection $round): array {
+                        /** @var self $first */
+                        $first = $round->sortBy(fn (self $election): int => $election->type->order())->first();
+
+                        return [
+                            'round' => $first->round,
+                            'code' => $first->tse_code,
+                            'date' => $first->date->toDateString(),
+                            'status' => self::leastAdvanced($round->map(fn (self $election): string => $election->status())),
+                        ];
+                    })
+                    ->values();
+                $opened = $rounds->reverse()->first(fn (array $round): bool => $round['status'] !== 'agendada') ?? $rounds->first();
 
                 return [
-                    'code' => $first->tse_code,
-                    'year' => $first->date->year,
-                    'round' => $first->round,
-                    'date' => $first->date->toDateString(),
-                    // The day is as far along as its least advanced election.
-                    'status' => collect(['apuracao', 'agendada', 'pendente', 'concluida'])
-                        ->first(fn (string $status): bool => $statuses->contains($status), 'concluida'),
+                    'cycle' => (string) $elections->first()?->cycle,
+                    'year' => (int) substr($rounds->first()['date'], 0, 4),
+                    'code' => $opened['code'],
+                    'status' => self::leastAdvanced($rounds->pluck('status')),
                     'offices' => $elections
+                        ->sortBy(fn (self $election): array => [$election->type->order(), $election->round])
                         ->flatMap(fn (self $election): array => $election->offices->map(fn (Office $office): string => $office->label())->all())
                         ->unique()
                         ->values()
                         ->all(),
+                    'rounds' => $rounds->all(),
                 ];
             })
-            ->sortByDesc(fn (array $day): string => "{$day['date']}-{$day['round']}")
+            ->sortByDesc(fn (array $cycle): string => $cycle['rounds'][0]['date'])
             ->values()
             ->all();
+    }
+
+    /**
+     * Status of elections shown as one: as far along as the least advanced.
+     *
+     * @param  SupportCollection<int, string>  $statuses
+     */
+    private static function leastAdvanced(SupportCollection $statuses): string
+    {
+        return collect(['apuracao', 'agendada', 'pendente', 'concluida'])
+            ->first(fn (string $status): bool => $statuses->contains($status), 'concluida');
     }
 
     /**

@@ -1,4 +1,5 @@
 import { Head, Link, router, useHttp, usePoll } from '@inertiajs/react';
+import type { InertiaLinkProps } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import Logo from '@/components/logo';
 import CandidateResults from '@/components/candidate-results';
@@ -16,7 +17,7 @@ import StatesTable from '@/components/states-table';
 import VoteBreakdown from '@/components/vote-breakdown';
 import WinnerCelebration from '@/components/winner-celebration';
 import type { CelebratedWinner } from '@/components/winner-celebration';
-import { dayLabel, STATUS } from '@/lib/election';
+import { roundLabel, STATUS } from '@/lib/election';
 import { formatLongDate, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { index as electionsIndex, show } from '@/routes/elections';
@@ -25,7 +26,7 @@ import { index as notificationsIndex } from '@/routes/notifications';
 import type {
     Candidate,
     Election,
-    ElectionDay,
+    ElectionCycle,
     ElectionLevel,
     MapResults,
     MunicipalityDetail,
@@ -33,13 +34,16 @@ import type {
     OfficeOption,
     Place,
     ResultSummary,
+    RoundOption,
     StateResult,
 } from '@/types';
 
 type Props = {
     election: Election;
-    /** Every election day, to choose another one. */
-    days: ElectionDay[];
+    /** Every election, one per year, to choose another one. */
+    cycles: ElectionCycle[];
+    /** Rounds of this election for the office and place on screen. */
+    rounds: RoundOption[];
     office: string;
     offices: OfficeOption[];
     level: ElectionLevel;
@@ -102,7 +106,8 @@ function celebrationTitle(
 
 export default function ResultsIndex({
     election,
-    days,
+    cycles,
+    rounds,
     office,
     offices,
     level,
@@ -271,8 +276,8 @@ export default function ResultsIndex({
         viewHref(election.code, { uf: code.toLowerCase(), municipio: null });
     const municipalityHref = (code: string) =>
         viewHref(election.code, { municipio: code });
-    const currentDay = days.find(
-        (day) => day.date === election.date && day.round === election.round,
+    const unavailableRounds = rounds.filter(
+        (option) => option.unavailable && option.round !== election.round,
     );
 
     function selectMunicipality(ibge: string) {
@@ -336,7 +341,7 @@ export default function ResultsIndex({
                                 {placeName && ` · ${placeName}`}
                             </h1>
                             <p className="text-muted">
-                                {dayLabel(election)} ·{' '}
+                                {roundLabel(election)} ·{' '}
                                 {formatLongDate(election.date)}
                             </p>
                         </div>
@@ -347,39 +352,54 @@ export default function ResultsIndex({
                         >
                             <PickerMenu
                                 label="Eleição"
-                                value={dayLabel(election)}
+                                value={`Eleições ${election.year}`}
                             >
                                 <ul className="space-y-1">
-                                    {days.map((day) => (
-                                        <li key={day.code}>
+                                    {cycles.map((cycle) => (
+                                        <li key={cycle.cycle}>
                                             <Link
-                                                href={viewHref(day.code)}
+                                                href={viewHref(cycle.code)}
                                                 viewTransition
                                                 aria-current={
-                                                    day.code ===
-                                                    currentDay?.code
+                                                    cycle.cycle ===
+                                                    election.cycle
                                                         ? 'page'
                                                         : undefined
                                                 }
                                                 className={cn(
                                                     'flex flex-col gap-1 rounded-lg px-3 py-2 hover:bg-primary-soft',
-                                                    day.code ===
-                                                        currentDay?.code &&
+                                                    cycle.cycle ===
+                                                        election.cycle &&
                                                         'bg-primary-soft',
                                                 )}
                                             >
                                                 <span className="font-semibold">
-                                                    {dayLabel(day)}
+                                                    Eleições {cycle.year}
                                                 </span>
                                                 <span className="text-sm text-muted">
-                                                    {formatLongDate(day.date)} ·{' '}
-                                                    {STATUS[day.status].label}
+                                                    {cycle.rounds
+                                                        .map(
+                                                            (round) =>
+                                                                `${round.round}º`,
+                                                        )
+                                                        .join(' e ')}{' '}
+                                                    {cycle.rounds.length > 1
+                                                        ? 'turnos'
+                                                        : 'turno'}{' '}
+                                                    ·{' '}
+                                                    {STATUS[cycle.status].label}
                                                 </span>
                                             </Link>
                                         </li>
                                     ))}
                                 </ul>
                             </PickerMenu>
+
+                            <RoundPicker
+                                rounds={rounds}
+                                current={election.round}
+                                href={(code) => viewHref(code)}
+                            />
 
                             {!isNationwide && (
                                 <PickerMenu
@@ -414,6 +434,16 @@ export default function ResultsIndex({
                                 </PickerMenu>
                             )}
                         </nav>
+
+                        {unavailableRounds.map((option) => (
+                            <p
+                                key={option.round}
+                                className="text-sm text-muted"
+                            >
+                                <span aria-hidden="true">ℹ️</span>{' '}
+                                {option.unavailable}
+                            </p>
+                        ))}
 
                         <nav aria-label="Cargo">
                             <p
@@ -708,5 +738,66 @@ export default function ResultsIndex({
                 />
             )}
         </>
+    );
+}
+
+/**
+ * Choose the round, keeping the office and place: a round that does not
+ * exist for them is shown disabled, with the reason on hover and below the
+ * pickers.
+ */
+function RoundPicker({
+    rounds,
+    current,
+    href,
+}: {
+    rounds: RoundOption[];
+    current: number;
+    href: (code: number) => InertiaLinkProps['href'];
+}) {
+    return (
+        <div
+            role="group"
+            aria-label="Turno"
+            className="flex items-center gap-1 rounded-xl border-2 border-line-strong bg-surface p-1.5 pl-3"
+        >
+            <span aria-hidden="true" className="mr-1 text-sm text-muted">
+                Turno
+            </span>
+            {rounds.map((option) =>
+                option.code === null ? (
+                    <span
+                        key={option.round}
+                        aria-disabled="true"
+                        title={option.unavailable ?? undefined}
+                        className="flex min-h-11 cursor-not-allowed items-center rounded-lg px-3 font-semibold text-muted opacity-60"
+                    >
+                        {option.round}º
+                        <span className="sr-only">
+                            {' '}
+                            turno: {option.unavailable}
+                        </span>
+                    </span>
+                ) : (
+                    <Link
+                        key={option.round}
+                        href={href(option.code)}
+                        viewTransition
+                        preserveScroll
+                        aria-current={
+                            option.round === current ? 'page' : undefined
+                        }
+                        className={cn(
+                            'flex min-h-11 items-center rounded-lg px-3 font-semibold transition-colors',
+                            option.round === current
+                                ? 'bg-primary text-on-primary'
+                                : 'hover:bg-primary-soft',
+                        )}
+                    >
+                        {option.round}º<span className="sr-only"> turno</span>
+                    </Link>
+                ),
+            )}
+        </div>
     );
 }

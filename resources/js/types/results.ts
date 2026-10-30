@@ -19,18 +19,43 @@ export type OfficeOption = {
 export type ElectionStatus = 'agendada' | 'apuracao' | 'concluida' | 'pendente';
 
 /** The elections of the same day and round, shown as one. */
-export type ElectionDay = {
-    /** Election the day opens on (the federal one first). */
+/** A round of an election year, opened on its federal part. */
+export type ElectionCycleRound = {
+    round: number;
     code: number;
+    date: string;
+    status: ElectionStatus;
+};
+
+/**
+ * The elections of a year shown as one: the TSE publishes each round as a
+ * separate election.
+ */
+export type ElectionCycle = {
+    cycle: string;
     year: number;
+    /** Election it opens on: the latest round that already took place. */
+    code: number;
+    status: ElectionStatus;
+    offices: string[];
+    rounds: ElectionCycleRound[];
+};
+
+/** A round for the office and place on screen. */
+export type RoundOption = {
     round: number;
     date: string;
     status: ElectionStatus;
-    offices: string[];
+    /** Election of the round, or null when it does not exist for them. */
+    code: number | null;
+    /** Why the round does not exist for the office and place. */
+    unavailable: string | null;
 };
 
 export type Election = {
     code: number;
+    /** Year of the election, shared by its rounds ("ele2026"). */
+    cycle: string;
     name: string;
     date: string;
     year: number;

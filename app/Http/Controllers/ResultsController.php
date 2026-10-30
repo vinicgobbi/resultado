@@ -10,6 +10,7 @@ use App\Models\Municipality;
 use App\Services\MapGeometryBuilder;
 use App\Services\ResultsPresenter;
 use App\Services\Tse\ResultSynchronizer;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -86,7 +87,8 @@ class ResultsController extends Controller
 
         return Inertia::render('results/index', [
             'election' => $election->toPublicArray(),
-            'days' => Election::days(),
+            'cycles' => Election::cycles(),
+            'rounds' => $this->rounds($election, $office, $state, $municipality),
             'office' => $office->value,
             // Where the office is elected: what the visitor has to pick.
             'level' => match (true) {
@@ -152,6 +154,48 @@ class ResultsController extends Controller
                 ])
                 ->values(),
         ])->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Rounds of the election's year for the office and place on screen: the
+     * election of each one, or why the round does not exist for them (only
+     * some offices, states and municipalities have a runoff).
+     *
+     * @return list<array{round: int, date: string, status: string, code: int|null, unavailable: string|null}>
+     */
+    private function rounds(Election $election, Office $office, ?State $state, ?Municipality $municipality): array
+    {
+        $officeLabel = $office->label($state);
+
+        return Election::query()
+            ->where('cycle', $election->cycle)
+            ->get()
+            ->groupBy('round')
+            ->sortKeys()
+            ->map(function (Collection $elections, int $round) use ($office, $officeLabel, $state, $municipality): array {
+                $holder = $elections->first(fn (Election $candidate): bool => $candidate->offices->contains($office));
+                $municipalities = $holder?->municipalities();
+                /** @var Election $first */
+                $first = $holder ?? $elections->sortBy(fn (Election $candidate): int => $candidate->type->order())->first();
+                $hadNo = $first->status() === 'agendada' ? 'não terá' : 'não teve';
+
+                $unavailable = match (true) {
+                    $holder === null => "{$officeLabel} não tem {$round}º turno.",
+                    $state !== null && ! in_array($state, $holder->statesFor($office), true) => "{$state->label()} {$hadNo} {$round}º turno para {$officeLabel}.",
+                    $municipality !== null && $municipalities !== null && ! array_key_exists($municipality->tse_code, $municipalities) => "{$municipality->name} {$hadNo} {$round}º turno para {$officeLabel}.",
+                    default => null,
+                };
+
+                return [
+                    'round' => $round,
+                    'date' => $first->date->toDateString(),
+                    'status' => $first->status(),
+                    'code' => $unavailable === null ? $holder?->tse_code : null,
+                    'unavailable' => $unavailable,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     /**

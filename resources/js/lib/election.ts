@@ -1,10 +1,10 @@
-import type { ElectionDay, ElectionStatus } from '@/types';
+import type { ElectionStatus } from '@/types';
 
 /**
- * "2026 · 2º turno": how the public names an election day.
+ * "2026 · 2º turno": how the public names a round of an election.
  */
-export function dayLabel(day: Pick<ElectionDay, 'year' | 'round'>): string {
-    return `${day.year} · ${day.round}º turno`;
+export function roundLabel(election: { year: number; round: number }): string {
+    return `${election.year} · ${election.round}º turno`;
 }
 
 /**

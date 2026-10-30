@@ -53,9 +53,12 @@ test('home page shows the active round with national, state and map results', fu
             ->component('results/index')
             ->where('election.code', 6258)
             ->where('election.round', 2)
-            ->has('days', 2)
-            ->where('days.0.code', 6258)
-            ->where('days.1.code', 6257)
+            ->has('cycles', 1)
+            ->where('cycles.0.code', 6258)
+            ->where('rounds', [
+                ['round' => 1, 'date' => '2026-10-04', 'status' => 'pendente', 'code' => 6257, 'unavailable' => null],
+                ['round' => 2, 'date' => '2026-10-25', 'status' => 'apuracao', 'code' => 6258, 'unavailable' => null],
+            ])
             ->where('summary.results.0', ['candidate_id' => $first->id, 'votes' => 300, 'percent' => 75])
             ->where('states.0.code', 'SP')
             ->where('states.0.leader_id', $second->id)
@@ -497,36 +500,89 @@ test('mayors of large municipalities need more than half of the valid votes', fu
         ->assertInertia(fn (Assert $page) => $page->where('summary.winners', []));
 });
 
-test('the archive lists every election day, joining the elections of the same day', function () {
+test('the archive lists every election once, with its rounds', function () {
     Election::factory()->municipal2024()->completed()->create();
 
     $this->get(route('elections.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('elections/index')
-            ->has('days', 3)
-            ->where('days.0', [
-                'code' => 6258,
+            ->has('cycles', 2)
+            ->where('cycles.0', [
+                'cycle' => 'ele2026',
                 'year' => 2026,
-                'round' => 2,
-                'date' => '2026-10-25',
+                'code' => 6258,
                 'status' => 'apuracao',
-                'offices' => ['Presidente', 'Governador'],
+                'offices' => ['Presidente', 'Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual'],
+                'rounds' => [
+                    ['round' => 1, 'code' => 6257, 'date' => '2026-10-04', 'status' => 'pendente'],
+                    ['round' => 2, 'code' => 6258, 'date' => '2026-10-25', 'status' => 'apuracao'],
+                ],
             ])
-            ->where('days.1.code', 6257)
-            ->where('days.1.offices', ['Presidente', 'Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual'])
-            ->where('days.2.code', 619)
-            ->where('days.2.status', 'concluida')
-            ->where('days.2.offices', ['Prefeito', 'Vereador']));
+            ->where('cycles.1.code', 619)
+            ->where('cycles.1.status', 'concluida')
+            ->where('cycles.1.offices', ['Prefeito', 'Vereador']));
 });
 
-test('an election day is only complete when all of its elections are', function () {
+test('an election opens on the latest round that already took place', function () {
+    $this->travelTo('2026-10-20 12:00:00');
+
+    $this->get(route('elections.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('cycles.0.code', 6257)
+            ->where('cycles.0.rounds.1.status', 'agendada'));
+});
+
+test('a round is only complete when all of its elections are', function () {
     Election::query()->where('tse_code', 6258)->update(['completed_at' => now()]);
 
-    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('days.0.status', 'apuracao'));
+    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('cycles.0.rounds.1.status', 'apuracao'));
 
     Election::query()->where('tse_code', 6260)->update(['completed_at' => now()]);
 
-    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('days.0.status', 'concluida'));
+    $this->get(route('elections.index'))->assertInertia(fn (Assert $page) => $page->where('cycles.0.rounds.1.status', 'concluida'));
+});
+
+test('the results page says which rounds the office and place have', function () {
+    foreach (['sp', 'df'] as $state) {
+        Result::create([
+            'election_code' => 6259, 'office' => Office::Governor, 'scope' => Result::SCOPE_STATE, 'scope_code' => $state,
+            'votes' => [], 'sections_total' => 10, 'sections_counted' => 10, 'counted_percent' => 100,
+        ]);
+    }
+
+    $this->get(route('elections.show', [6259, 'cargo' => 'governador', 'uf' => 'df']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rounds.0.code', 6259)
+            ->where('rounds.1.code', 6260)
+            ->where('rounds.1.unavailable', null));
+
+    $this->get(route('elections.show', [6259, 'cargo' => 'governador', 'uf' => 'sp']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rounds.1.code', null)
+            ->where('rounds.1.unavailable', 'São Paulo não teve 2º turno para Governador.'));
+
+    $this->get(route('elections.show', [6259, 'cargo' => 'senador']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rounds.1.code', null)
+            ->where('rounds.1.unavailable', 'Senador não tem 2º turno.'));
+});
+
+test('a municipality without a runoff says so', function () {
+    Election::factory()->municipal2024()->completed()->create();
+    Election::factory()->municipal2024(2)->in(['sp'], ['71072' => 'sp'])->completed()->create();
+    foreach (['71072' => 'SÃO PAULO', '62910' => 'CAMPINAS'] as $code => $name) {
+        Municipality::create(['tse_code' => $code, 'state' => 'sp', 'name' => $name]);
+        Result::create([
+            'election_code' => 619, 'office' => Office::Mayor, 'scope' => Result::SCOPE_MUNICIPALITY, 'scope_code' => $code,
+            'votes' => [], 'sections_total' => 10, 'sections_counted' => 10, 'counted_percent' => 100,
+        ]);
+    }
+
+    $this->get(route('elections.show', [619, 'cargo' => 'prefeito', 'uf' => 'sp', 'municipio' => '71072']))
+        ->assertInertia(fn (Assert $page) => $page->where('rounds.1.code', 620));
+
+    $this->get(route('elections.show', [619, 'cargo' => 'prefeito', 'uf' => 'sp', 'municipio' => '62910']))
+        ->assertInertia(fn (Assert $page) => $page->where('rounds.1.unavailable', 'CAMPINAS não teve 2º turno para Prefeito.'));
 });
 
 test('the icons are linked with their version, so browsers load new ones', function () {
