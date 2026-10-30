@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\CandidateController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FailedJobController;
 use App\Http\Controllers\Admin\MaintenanceRunController;
+use App\Http\Controllers\Admin\PartyColorController;
 use App\Http\Controllers\Admin\PushNotificationController;
 use App\Http\Controllers\Admin\SiteNoticeController;
 use App\Http\Controllers\Admin\UserController;
@@ -61,6 +62,9 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/candidatos', [CandidateController::class, 'index'])->name('candidates.index');
         Route::patch('/candidatos/{candidate}', [CandidateController::class, 'update'])->name('candidates.update');
+
+        Route::get('/partidos', [PartyColorController::class, 'index'])->name('parties.index');
+        Route::put('/partidos', [PartyColorController::class, 'update'])->name('parties.update');
 
         Route::get('/usuarios', [UserController::class, 'index'])->name('users.index');
         Route::post('/usuarios', [UserController::class, 'store'])->name('users.store');

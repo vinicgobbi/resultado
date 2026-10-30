@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { home, logout } from '@/routes';
 import { index as adminIndex } from '@/routes/admin';
 import { index as candidatesIndex } from '@/routes/admin/candidates';
+import { index as partiesIndex } from '@/routes/admin/parties';
 import { index as noticesIndex } from '@/routes/admin/site-notices';
 import { index as usersIndex } from '@/routes/admin/users';
 
@@ -11,6 +12,7 @@ const navigation = [
     { label: 'Painel', href: adminIndex.url() },
     { label: 'Avisos', href: noticesIndex.url() },
     { label: 'Candidatos', href: candidatesIndex.url() },
+    { label: 'Partidos', href: partiesIndex.url() },
     { label: 'Usuários', href: usersIndex.url() },
 ];
 

@@ -24,6 +24,9 @@ class UpdateCandidateRequest extends FormRequest
     {
         return [
             'color' => ['nullable', 'string', 'hex_color', 'size:7'],
+            'ballot_name' => ['nullable', 'string', 'max:60'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,png,webp', 'max:2048'],
+            'remove_photo' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -35,6 +38,10 @@ class UpdateCandidateRequest extends FormRequest
         return [
             'color.hex_color' => 'Informe uma cor no formato #RRGGBB.',
             'color.size' => 'Informe uma cor no formato #RRGGBB.',
+            'ballot_name.max' => 'O nome deve ter no máximo :max caracteres.',
+            'photo.image' => 'Envie uma imagem.',
+            'photo.mimes' => 'Envie uma foto em JPEG, PNG ou WebP.',
+            'photo.max' => 'A foto deve ter no máximo 2 MB.',
         ];
     }
 }

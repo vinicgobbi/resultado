@@ -12,6 +12,8 @@ use App\Models\Municipality;
 use App\Services\Tse\ResultSynchronizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -77,20 +79,54 @@ class CandidateController extends Controller
                 ->get()
                 ->map(fn (Candidate $candidate): array => [
                     ...$candidate->toPublicArray(),
+                    'tse_name' => $candidate->ballot_name,
+                    'custom_name' => $candidate->custom_ballot_name,
                     'custom_color' => $candidate->color,
                     'party_color' => $candidate->partyColor(),
+                    'has_custom_photo' => $candidate->custom_photo !== null,
                 ]),
         ]);
     }
 
     /**
-     * Update the color of a candidate. The cached results of its elections
-     * are invalidated, so the public pages show the new color right away.
+     * Correct a candidate: the name shown, the photo (sent here when the TSE
+     * has none or is blocking) and the color. The TSE data stays as
+     * published, and the cached results of its elections are invalidated,
+     * so the public pages show the change right away.
      */
     public function update(UpdateCandidateRequest $request, Candidate $candidate): RedirectResponse
     {
+        $name = trim($request->string('ballot_name')->toString());
+        $disk = Storage::disk(Candidate::PHOTO_DISK);
+        $photo = $candidate->custom_photo;
+
+        if ($request->hasFile('photo') || $request->boolean('remove_photo')) {
+            if ($photo !== null) {
+                $disk->delete($photo);
+            }
+
+            $photo = null;
+        }
+
+        if ($request->hasFile('photo')) {
+            $file = $request->file('photo');
+            // A new name each time: browsers keep a photo for a day.
+            $stored = $file instanceof UploadedFile
+                ? $file->storeAs(Candidate::CUSTOM_PHOTO_DIRECTORY, "{$candidate->tse_sequence}-".now()->getTimestamp().'.'.$file->extension(), Candidate::PHOTO_DISK)
+                : false;
+
+            if ($stored === false) {
+                return back()->with('error', 'Não foi possível salvar a foto no servidor. Confira as permissões da pasta de fotos.');
+            }
+
+            $photo = $stored;
+        }
+
         $candidate->update([
             'color' => $request->filled('color') ? strtolower($request->string('color')->toString()) : null,
+            // The TSE name again, or none: no correction.
+            'custom_ballot_name' => $name === '' || $name === $candidate->ballot_name ? null : $name,
+            'custom_photo' => $photo,
         ]);
 
         $election = $candidate->election;
@@ -99,6 +135,6 @@ class CandidateController extends Controller
             ResultSynchronizer::invalidate($electionCode);
         }
 
-        return back()->with('success', "Cor de {$candidate->ballot_name} atualizada.");
+        return back()->with('success', "{$candidate->displayName()} atualizado.");
     }
 }

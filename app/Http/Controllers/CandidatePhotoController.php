@@ -32,12 +32,20 @@ class CandidatePhotoController extends Controller
     private const int RETRY_AFTER_COUNT_SECONDS = 1800;
 
     /**
-     * Official photo of a candidate, downloaded from the TSE the first time
-     * it is requested (or beforehand with "php artisan tse:fotos"). Later
-     * pages link to the stored file, served without the application.
+     * Photo of a candidate: the one sent in the admin, otherwise the official
+     * one, downloaded from the TSE the first time it is requested (or
+     * beforehand with "php artisan tse:fotos"). Later pages link to the
+     * stored file, served without the application.
      */
     public function __invoke(Request $request, Candidate $candidate, CandidatePhotos $photos): BinaryFileResponse
     {
+        $disk = Storage::disk(Candidate::PHOTO_DISK);
+
+        // Sent in the admin: shown instead of the TSE one.
+        if ($candidate->custom_photo !== null && $disk->exists($candidate->custom_photo)) {
+            return response()->file($disk->path($candidate->custom_photo), ['Cache-Control' => 'public, max-age=86400']);
+        }
+
         if (! $photos->isStored($candidate)) {
             abort_if($photos->isMissing($candidate), 404);
 
@@ -69,7 +77,7 @@ class CandidatePhotoController extends Controller
             abort_unless($photos->isStored($candidate), 503, 'Foto temporariamente indisponível.', ['Retry-After' => '30']);
         }
 
-        return response()->file(Storage::disk(Candidate::PHOTO_DISK)->path(Candidate::photoPath($candidate->tse_sequence)), [
+        return response()->file($disk->path(Candidate::photoPath($candidate->tse_sequence)), [
             'Content-Type' => 'image/jpeg',
             'Cache-Control' => 'public, max-age=86400',
         ]);

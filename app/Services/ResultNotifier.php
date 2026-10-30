@@ -182,7 +182,8 @@ class ResultNotifier
         $runoff = $election->round === 1 ? $this->outcome->runoff($result, $event->office) : null;
         $names = Candidate::query()
             ->whereKey(array_keys($result->votes))
-            ->pluck('ballot_name', 'id')
+            ->get(['id', 'ballot_name', 'custom_ballot_name'])
+            ->mapWithKeys(fn (Candidate $candidate): array => [$candidate->id => $candidate->displayName()])
             ->all();
         $leaders = $this->leaders($result, $names);
 
