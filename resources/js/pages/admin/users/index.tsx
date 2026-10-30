@@ -8,7 +8,7 @@ type Props = {
 };
 
 const inputClass =
-    'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
+    'min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
 
 export default function UsersIndex({ users }: Props) {
     const { auth } = usePage().props;
@@ -48,7 +48,7 @@ export default function UsersIndex({ users }: Props) {
                                             `Excluir o usuário ${user.email}?`,
                                         )
                                     }
-                                    className="rounded-lg border border-live px-3 py-1.5 text-sm text-live hover:bg-live-soft"
+                                    className="min-h-10 shrink-0 rounded-lg border border-live px-3 text-sm text-live hover:bg-live-soft"
                                 >
                                     Excluir
                                 </Link>
@@ -107,7 +107,7 @@ export default function UsersIndex({ users }: Props) {
                             <button
                                 type="submit"
                                 disabled={processing}
-                                className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
+                                className="min-h-11 w-full rounded-lg bg-primary px-4 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
                             >
                                 Criar usuário
                             </button>

@@ -29,14 +29,38 @@ export default function AdminLayout({
     return (
         <div className="min-h-screen bg-subtle text-ink">
             <header className="border-b border-line bg-surface">
-                <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 px-4 py-3">
-                    <Link
-                        href={adminIndex.url()}
-                        className="font-bold text-ink"
+                <div className="mx-auto max-w-5xl px-4">
+                    <div className="flex items-center gap-3 py-3">
+                        <Link
+                            href={adminIndex.url()}
+                            className="font-bold whitespace-nowrap text-ink"
+                        >
+                            Admin · Eleições
+                        </Link>
+                        <div className="ml-auto flex items-center gap-1 text-sm sm:gap-3">
+                            <Link
+                                href={home.url()}
+                                className="flex min-h-10 items-center rounded-lg px-2 whitespace-nowrap text-muted hover:text-ink"
+                            >
+                                Ver site
+                            </Link>
+                            <span className="hidden text-muted sm:inline">
+                                {auth.user?.name}
+                            </span>
+                            <Link
+                                href={logout()}
+                                as="button"
+                                className="min-h-10 rounded-lg border border-line-strong px-3 hover:bg-subtle"
+                            >
+                                Sair
+                            </Link>
+                        </div>
+                    </div>
+                    {/* Scrolls sideways on narrow screens instead of wrapping. */}
+                    <nav
+                        aria-label="Seções do admin"
+                        className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-2"
                     >
-                        Admin · Eleições
-                    </Link>
-                    <nav className="flex gap-1">
                         {navigation.map((item) => (
                             <Link
                                 key={item.href}
@@ -45,46 +69,36 @@ export default function AdminLayout({
                                     isActive(item.href) ? 'page' : undefined
                                 }
                                 className={cn(
-                                    'rounded-lg px-3 py-1.5 text-sm',
+                                    'flex min-h-10 shrink-0 items-center rounded-lg px-3 text-sm',
                                     isActive(item.href)
-                                        ? 'bg-subtle font-medium text-ink'
-                                        : 'text-muted hover:text-ink',
+                                        ? 'bg-primary-soft font-semibold text-primary'
+                                        : 'text-muted hover:bg-subtle hover:text-ink',
                                 )}
                             >
                                 {item.label}
                             </Link>
                         ))}
                     </nav>
-                    <div className="ml-auto flex items-center gap-3 text-sm">
-                        <Link
-                            href={home.url()}
-                            className="text-muted hover:text-ink"
-                        >
-                            Ver site
-                        </Link>
-                        <span className="hidden text-muted sm:inline">
-                            {auth.user?.name}
-                        </span>
-                        <Link
-                            href={logout()}
-                            as="button"
-                            className="rounded-lg border border-line-strong px-3 py-1.5 hover:bg-subtle"
-                        >
-                            Sair
-                        </Link>
-                    </div>
                 </div>
             </header>
 
-            <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
-                <h1 className="text-xl font-bold text-ink">{title}</h1>
+            <main className="mx-auto max-w-5xl space-y-4 px-4 py-5 sm:py-6">
+                <h1 className="text-xl font-bold text-ink sm:text-2xl">
+                    {title}
+                </h1>
                 {flash.success && (
-                    <div className="rounded-lg border border-success bg-success-soft px-4 py-2 text-sm text-success">
+                    <div
+                        role="status"
+                        className="rounded-lg border border-success bg-success-soft px-4 py-2 text-sm text-success"
+                    >
                         {flash.success}
                     </div>
                 )}
                 {flash.error && (
-                    <div className="rounded-lg border border-live bg-live-soft px-4 py-2 text-sm text-live">
+                    <div
+                        role="alert"
+                        className="rounded-lg border border-live bg-live-soft px-4 py-2 text-sm text-live"
+                    >
                         {flash.error}
                     </div>
                 )}

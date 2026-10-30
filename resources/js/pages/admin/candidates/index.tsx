@@ -5,6 +5,9 @@ import { cn } from '@/lib/utils';
 import { index, update } from '@/routes/admin/candidates';
 import type { Candidate, OfficeOption } from '@/types';
 
+const selectClass =
+    'min-h-11 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm sm:w-auto sm:max-w-64';
+
 type Props = {
     election: number | null;
     elections: OfficeOption[];
@@ -64,7 +67,7 @@ export default function CandidatesIndex({
                 <code>php artisan tse:sincronizar</code>).
             </p>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="space-y-2">
                 {elections.length > 1 && (
                     <select
                         value={election ?? ''}
@@ -77,7 +80,7 @@ export default function CandidatesIndex({
                             )
                         }
                         aria-label="Eleição"
-                        className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
+                        className={selectClass}
                     >
                         {elections.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -86,65 +89,75 @@ export default function CandidatesIndex({
                         ))}
                     </select>
                 )}
-                {offices.map((option) => (
-                    <Link
-                        key={option.value}
-                        href={filterHref({
-                            cargo: option.value,
-                            municipio: undefined,
-                        })}
-                        preserveScroll
-                        className={cn(
-                            'rounded-lg px-3 py-1.5 text-sm font-medium',
-                            option.value === office
-                                ? 'bg-primary text-on-primary'
-                                : 'text-muted hover:bg-subtle',
-                        )}
-                    >
-                        {option.label}
-                    </Link>
-                ))}
-                {states.length > 0 && (
-                    <select
-                        value={state ?? ''}
-                        onChange={(event) =>
-                            router.visit(
-                                filterHref({
-                                    uf: event.target.value,
-                                    municipio: undefined,
-                                }),
-                                { preserveScroll: true },
-                            )
-                        }
-                        aria-label="Estado"
-                        className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
-                    >
-                        {states.map((option) => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                )}
-                {municipalities.length > 0 && (
-                    <select
-                        value={municipality ?? ''}
-                        onChange={(event) =>
-                            router.visit(
-                                filterHref({ municipio: event.target.value }),
-                                { preserveScroll: true },
-                            )
-                        }
-                        aria-label="Município"
-                        className="max-w-56 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm"
-                    >
-                        {municipalities.map((option) => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                )}
+                {/* Offices scroll sideways on narrow screens. */}
+                <nav
+                    aria-label="Cargo"
+                    className="-mx-4 flex gap-1 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0"
+                >
+                    {offices.map((option) => (
+                        <Link
+                            key={option.value}
+                            href={filterHref({
+                                cargo: option.value,
+                                municipio: undefined,
+                            })}
+                            preserveScroll
+                            className={cn(
+                                'flex min-h-10 shrink-0 items-center rounded-lg px-3 text-sm font-medium whitespace-nowrap',
+                                option.value === office
+                                    ? 'bg-primary text-on-primary'
+                                    : 'text-muted hover:bg-subtle',
+                            )}
+                        >
+                            {option.label}
+                        </Link>
+                    ))}
+                </nav>
+                <div className="grid gap-2 sm:flex sm:flex-wrap">
+                    {states.length > 0 && (
+                        <select
+                            value={state ?? ''}
+                            onChange={(event) =>
+                                router.visit(
+                                    filterHref({
+                                        uf: event.target.value,
+                                        municipio: undefined,
+                                    }),
+                                    { preserveScroll: true },
+                                )
+                            }
+                            aria-label="Estado"
+                            className={selectClass}
+                        >
+                            {states.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    {municipalities.length > 0 && (
+                        <select
+                            value={municipality ?? ''}
+                            onChange={(event) =>
+                                router.visit(
+                                    filterHref({
+                                        municipio: event.target.value,
+                                    }),
+                                    { preserveScroll: true },
+                                )
+                            }
+                            aria-label="Município"
+                            className={selectClass}
+                        >
+                            {municipalities.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
             </div>
 
             {candidates.length === 0 ? (
@@ -158,7 +171,7 @@ export default function CandidatesIndex({
                             <Form
                                 {...update.form(candidate.id)}
                                 options={{ preserveScroll: true }}
-                                className="flex flex-wrap items-center gap-3 px-4 py-3"
+                                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-3 sm:flex"
                             >
                                 {({ errors, processing }) => (
                                     <>
@@ -192,20 +205,22 @@ export default function CandidatesIndex({
                                                 </p>
                                             )}
                                         </div>
-                                        <input
-                                            type="color"
-                                            name="color"
-                                            defaultValue={candidate.color}
-                                            className="h-10 w-14 cursor-pointer rounded border border-line-strong bg-transparent"
-                                            aria-label={`Cor de ${candidate.name}`}
-                                        />
-                                        <button
-                                            type="submit"
-                                            disabled={processing}
-                                            className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
-                                        >
-                                            Salvar
-                                        </button>
+                                        <div className="col-span-2 flex items-center gap-2 sm:col-span-1">
+                                            <input
+                                                type="color"
+                                                name="color"
+                                                defaultValue={candidate.color}
+                                                className="h-11 w-16 shrink-0 cursor-pointer rounded border border-line-strong bg-transparent"
+                                                aria-label={`Cor de ${candidate.name}`}
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={processing}
+                                                className="min-h-11 flex-1 rounded-lg bg-primary px-4 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:flex-none"
+                                            >
+                                                Salvar
+                                            </button>
+                                        </div>
                                     </>
                                 )}
                             </Form>

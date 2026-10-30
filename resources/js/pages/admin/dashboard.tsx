@@ -110,10 +110,10 @@ const RUN_STATUS: Record<RunStatus, { label: string; className: string }> = {
 };
 
 const inputClass =
-    'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
+    'min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm';
 
 const smallButtonClass =
-    'min-h-9 rounded-lg border-2 border-line-strong px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft disabled:opacity-50';
+    'min-h-10 rounded-lg border-2 border-line-strong px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft disabled:opacity-50';
 
 /**
  * A moment as "há 3 minutos", with the exact time on hover. Only the
@@ -159,6 +159,38 @@ function HealthCard({
                 </span>
             </p>
             <div className="mt-1 text-sm text-muted">{children}</div>
+        </div>
+    );
+}
+
+/**
+ * How many results of an election are final, as a bar and a count.
+ */
+function ElectionProgress({ election }: { election: ElectionRow }) {
+    const percent =
+        election.results > 0
+            ? (election.final_results / election.results) * 100
+            : 0;
+
+    return (
+        <div className="space-y-1">
+            <div
+                role="progressbar"
+                aria-label={`Resultados finais de ${election.name}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(percent)}
+                className="h-2 overflow-hidden rounded-full bg-track"
+            >
+                <div
+                    className="h-full rounded-full bg-success transition-all duration-700"
+                    style={{ width: `${percent}%` }}
+                />
+            </div>
+            <span className="text-muted tabular-nums">
+                {election.final_results.toLocaleString('pt-BR')} de{' '}
+                {election.results.toLocaleString('pt-BR')}
+            </span>
         </div>
     );
 }
@@ -228,6 +260,23 @@ export default function Dashboard({
 
     const electionTasks = tasks.filter((task) => task.needs_election);
 
+    const electionActions = (election: ElectionRow) =>
+        electionTasks.map((task) => (
+            <button
+                key={task.value}
+                type="button"
+                disabled={
+                    busy.has(`${task.value}-${election.code}`) ||
+                    starting !== null
+                }
+                onClick={() => start(task, election)}
+                aria-label={`${task.label}: ${election.name}`}
+                className="min-h-11 rounded-xl border-2 border-line-strong px-3 font-semibold whitespace-nowrap hover:border-primary hover:bg-primary-soft disabled:opacity-50"
+            >
+                {task.button_label}
+            </button>
+        ));
+
     return (
         <AdminLayout title="Painel da apuração">
             <Head title="Painel" />
@@ -251,7 +300,7 @@ export default function Dashboard({
                         {health.queued_jobs} aguardando · {health.failed_jobs}{' '}
                         com falha
                         {health.last_failure && (
-                            <span className="mt-1 block break-words">
+                            <span className="mt-1 block wrap-anywhere">
                                 Última falha{' '}
                                 <Moment value={health.last_failure.at} />:{' '}
                                 {health.last_failure.message}
@@ -303,7 +352,45 @@ export default function Dashboard({
                 <h2 id="eleicoes" className="text-lg font-bold">
                     Eleições
                 </h2>
-                <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+                {/* Small screens: one card per election, nothing to scroll. */}
+                <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface md:hidden">
+                    {elections.map((election) => (
+                        <li
+                            key={election.code}
+                            className="space-y-3 p-4 text-sm"
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-semibold">
+                                        {election.name}
+                                    </p>
+                                    <p className="text-muted">
+                                        {formatDate(election.date)} · código{' '}
+                                        {election.code}
+                                    </p>
+                                </div>
+                                <StatusBadge
+                                    status={election.status}
+                                    className="shrink-0 text-xs"
+                                />
+                            </div>
+                            <div>
+                                <p className="mb-1 text-muted">
+                                    Resultados finais
+                                </p>
+                                <ElectionProgress election={election} />
+                            </div>
+                            <p className="text-muted">
+                                Última sincronização:{' '}
+                                <Moment value={election.last_synced_at} />
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {electionActions(election)}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+                <div className="hidden overflow-x-auto rounded-2xl border border-line bg-surface md:block">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-subtle text-muted">
                             <tr>
@@ -338,13 +425,6 @@ export default function Dashboard({
                         </thead>
                         <tbody className="divide-y divide-line">
                             {elections.map((election) => {
-                                const percent =
-                                    election.results > 0
-                                        ? (election.final_results /
-                                              election.results) *
-                                          100
-                                        : 0;
-
                                 return (
                                     <tr key={election.code}>
                                         <th
@@ -366,32 +446,9 @@ export default function Dashboard({
                                             />
                                         </td>
                                         <td className="min-w-40 px-4 py-3">
-                                            <div
-                                                role="progressbar"
-                                                aria-label={`Resultados finais de ${election.name}`}
-                                                aria-valuemin={0}
-                                                aria-valuemax={100}
-                                                aria-valuenow={Math.round(
-                                                    percent,
-                                                )}
-                                                className="h-2 overflow-hidden rounded-full bg-track"
-                                            >
-                                                <div
-                                                    className="h-full rounded-full bg-success transition-all duration-700"
-                                                    style={{
-                                                        width: `${percent}%`,
-                                                    }}
-                                                />
-                                            </div>
-                                            <span className="text-muted tabular-nums">
-                                                {election.final_results.toLocaleString(
-                                                    'pt-BR',
-                                                )}{' '}
-                                                de{' '}
-                                                {election.results.toLocaleString(
-                                                    'pt-BR',
-                                                )}
-                                            </span>
+                                            <ElectionProgress
+                                                election={election}
+                                            />
                                         </td>
                                         <td className="px-4 py-3 text-muted">
                                             <Moment
@@ -400,28 +457,7 @@ export default function Dashboard({
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
-                                                {electionTasks.map((task) => (
-                                                    <button
-                                                        key={task.value}
-                                                        type="button"
-                                                        disabled={
-                                                            busy.has(
-                                                                `${task.value}-${election.code}`,
-                                                            ) ||
-                                                            starting !== null
-                                                        }
-                                                        onClick={() =>
-                                                            start(
-                                                                task,
-                                                                election,
-                                                            )
-                                                        }
-                                                        aria-label={`${task.label}: ${election.name}`}
-                                                        className="min-h-10 rounded-xl border-2 border-line-strong px-3 font-semibold whitespace-nowrap hover:border-primary hover:bg-primary-soft disabled:opacity-50"
-                                                    >
-                                                        {task.button_label}
-                                                    </button>
-                                                ))}
+                                                {electionActions(election)}
                                             </div>
                                         </td>
                                     </tr>
@@ -477,69 +513,71 @@ export default function Dashboard({
                 <div className="grid gap-3 lg:grid-cols-2">
                     <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
                         <h3 className="font-semibold">Envios</h3>
-                        <table className="w-full text-left text-sm">
-                            <thead className="text-muted">
-                                <tr>
-                                    <th
-                                        scope="col"
-                                        className="py-1 font-medium"
-                                    >
-                                        Período
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="py-1 text-right font-medium"
-                                    >
-                                        Entregues
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="py-1 text-right font-medium"
-                                    >
-                                        Falhas
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="py-1 text-right font-medium"
-                                    >
-                                        Expiradas
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-line tabular-nums">
-                                {deliveries.map((period) => (
-                                    <tr key={period.label}>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="text-muted">
+                                    <tr>
                                         <th
-                                            scope="row"
-                                            className="py-1.5 font-normal"
+                                            scope="col"
+                                            className="py-1 font-medium"
                                         >
-                                            {period.label}
+                                            Período
                                         </th>
-                                        <td className="py-1.5 text-right">
-                                            {period.delivered.toLocaleString(
-                                                'pt-BR',
-                                            )}
-                                        </td>
-                                        <td
-                                            className={cn(
-                                                'py-1.5 text-right',
-                                                period.failed > 0 &&
-                                                    'font-semibold text-live',
-                                            )}
+                                        <th
+                                            scope="col"
+                                            className="py-1 text-right font-medium"
                                         >
-                                            {period.failed.toLocaleString(
-                                                'pt-BR',
-                                            )}
-                                        </td>
-                                        <td className="py-1.5 text-right text-muted">
-                                            {period.expired.toLocaleString(
-                                                'pt-BR',
-                                            )}
-                                        </td>
+                                            Entregues
+                                        </th>
+                                        <th
+                                            scope="col"
+                                            className="py-1 text-right font-medium"
+                                        >
+                                            Falhas
+                                        </th>
+                                        <th
+                                            scope="col"
+                                            className="py-1 text-right font-medium"
+                                        >
+                                            Expiradas
+                                        </th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-line tabular-nums">
+                                    {deliveries.map((period) => (
+                                        <tr key={period.label}>
+                                            <th
+                                                scope="row"
+                                                className="py-1.5 font-normal"
+                                            >
+                                                {period.label}
+                                            </th>
+                                            <td className="py-1.5 text-right">
+                                                {period.delivered.toLocaleString(
+                                                    'pt-BR',
+                                                )}
+                                            </td>
+                                            <td
+                                                className={cn(
+                                                    'py-1.5 text-right',
+                                                    period.failed > 0 &&
+                                                        'font-semibold text-live',
+                                                )}
+                                            >
+                                                {period.failed.toLocaleString(
+                                                    'pt-BR',
+                                                )}
+                                            </td>
+                                            <td className="py-1.5 text-right text-muted">
+                                                {period.expired.toLocaleString(
+                                                    'pt-BR',
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                         <p className="text-xs text-muted">
                             Expiradas: inscrições que o navegador cancelou; são
                             removidas sozinhas.
@@ -548,7 +586,10 @@ export default function Dashboard({
                             type="button"
                             disabled={testing || !health.push_ready}
                             onClick={() => void sendTest()}
-                            className={smallButtonClass}
+                            className={cn(
+                                smallButtonClass,
+                                'min-h-11 w-full sm:w-auto',
+                            )}
                         >
                             {testing
                                 ? 'Enviando…'
@@ -571,8 +612,10 @@ export default function Dashboard({
                                         key={`${item.office}-${item.scope_code}`}
                                         className="flex justify-between gap-3 py-1.5"
                                     >
-                                        <span>{item.label}</span>
-                                        <span className="text-muted tabular-nums">
+                                        <span className="min-w-0">
+                                            {item.label}
+                                        </span>
+                                        <span className="shrink-0 text-muted tabular-nums">
                                             {item.followers.toLocaleString(
                                                 'pt-BR',
                                             )}
@@ -682,7 +725,7 @@ export default function Dashboard({
                             <button
                                 type="submit"
                                 disabled={processing || !health.push_ready}
-                                className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50"
+                                className="min-h-11 w-full rounded-xl bg-primary px-4 font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:w-auto"
                             >
                                 Enviar aviso
                             </button>
@@ -751,7 +794,7 @@ export default function Dashboard({
                                             </Link>
                                         )}
                                     </summary>
-                                    <pre className="max-h-80 overflow-auto border-t border-line bg-subtle px-4 py-3 text-xs whitespace-pre-wrap">
+                                    <pre className="max-h-80 overflow-auto border-t border-line bg-subtle px-4 py-3 text-xs wrap-anywhere whitespace-pre-wrap">
                                         {run.output ||
                                             (run.status === 'na-fila'
                                                 ? 'Aguardando o início…'
