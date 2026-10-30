@@ -22,6 +22,10 @@ export default function AdminLayout({
     const { auth, flash } = usePage().props;
     const { url } = usePage();
 
+    /** The dashboard only on its own page; the others on their subpages too. */
+    const isActive = (href: string) =>
+        href === adminIndex.url() ? url === href : url.startsWith(href);
+
     return (
         <div className="min-h-screen bg-subtle text-ink">
             <header className="border-b border-line bg-surface">
@@ -37,13 +41,14 @@ export default function AdminLayout({
                             <Link
                                 key={item.href}
                                 href={item.href}
+                                aria-current={
+                                    isActive(item.href) ? 'page' : undefined
+                                }
                                 className={cn(
                                     'rounded-lg px-3 py-1.5 text-sm',
-                                    item.href === adminIndex.url()
-                                        ? url === item.href
-                                        : url.startsWith(item.href)
-                                          ? 'bg-subtle font-medium text-ink'
-                                          : 'text-muted hover:text-ink',
+                                    isActive(item.href)
+                                        ? 'bg-subtle font-medium text-ink'
+                                        : 'text-muted hover:text-ink',
                                 )}
                             >
                                 {item.label}
