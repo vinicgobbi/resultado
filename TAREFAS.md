@@ -58,10 +58,11 @@ funcionando e agir sem precisar de acesso ao servidor.
 
 ### 4. Aviso no site
 
-- [ ] Faixa no topo de todas as páginas, editável pelo admin (ex.: "A
-      apuração começa às 17h", "Instabilidade no site do TSE")
-- [ ] Data de início e fim para o aviso aparecer e sumir sozinho
-- [ ] Níveis de destaque (informação, atenção)
+- [x] Faixa no topo de todas as páginas, editável pelo admin (ex.: "A
+      apuração começa às 17h", "Instabilidade no site do TSE"), com prévia
+      no admin; quem visita pode fechá-la, e ela volta se o aviso for editado
+- [x] Data de início e fim para o aviso aparecer e sumir sozinho
+- [x] Níveis de destaque (informação, atenção)
 
 ### 5. Candidatos
 
@@ -80,7 +81,7 @@ funcionando e agir sem precisar de acesso ao servidor.
 ### Antes de publicar as mudanças do painel
 
 - Rodar as migrações (`push_follows`, `push_messages`, `maintenance_runs`,
-  `push_deliveries`)
+  `push_deliveries`, `site_notices`)
 - Confirmar que o agendador (`schedule:run` no cron ou `schedule:work`) está
   ativo no servidor: é ele que inicia o worker da fila `admin`; sem isso, as
   tarefas ficam paradas em "Na fila"
