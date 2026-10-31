@@ -255,25 +255,66 @@ test('the end of the count tells who was elected', function () {
     ]);
 });
 
-test('new results of a followed result are notified at most every ten minutes', function () {
+/**
+ * Syncs the national result with these votes and percent counted, and
+ * returns how many "new results" messages it wrote.
+ *
+ * @param  array<string, int>  $votes
+ */
+function syncCountry(array &$country, array $votes, string $counted): int
+{
+    $country = ['votes' => $votes, 'counted' => $counted];
+    PushMessage::query()->delete();
+    Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    test()->artisan('tse:sincronizar')->assertSuccessful();
+
+    return PushMessage::query()->where('tag', 'presidente-br-atualizacao')->count();
+}
+
+test('new results of a followed result are notified at a new step of the count or a new leader', function () {
     Http::preventStrayRequests();
     config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
     followingBrowser('https://fcm.googleapis.com/abc');
-    fakeTse(overrides: ['fcm.googleapis.com/*' => Http::response('', 201)]);
-    $changeCountry = fn () => Result::query()->forElection(6258, Office::President, Result::SCOPE_COUNTRY)->update(['tse_updated_at' => '2026-10-25 19:00:00']);
+    $country = [];
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => function () use (&$country) {
+            return Http::response(tseResult($country['votes'], counted: $country['counted']));
+        },
+        'fcm.googleapis.com/*' => Http::response('', 201),
+    ]);
+    $flavioLeads = ['280002551544' => 520, '280002542548' => 480];
+    $lulaLeads = ['280002551544' => 480, '280002542548' => 520];
 
-    $this->artisan('tse:sincronizar')->assertSuccessful();
-    PushMessage::query()->delete();
+    expect(syncCountry($country, $flavioLeads, '50'))->toBe(1);
+
+    $this->travel(11)->minutes();
+    expect(syncCountry($country, $flavioLeads, '60'))->toBe(0)
+        ->and(syncCountry($country, $flavioLeads, '75'))->toBe(1);
+
+    $this->travel(11)->minutes();
+    expect(syncCountry($country, $lulaLeads, '76'))->toBe(1);
+});
+
+test('new results are notified at most every ten minutes, and a step held back is sent after it', function () {
+    Http::preventStrayRequests();
+    config(['services.webpush' => [...WebPush::generateKeys(), 'subject' => 'mailto:test@example.com']]);
+    followingBrowser('https://fcm.googleapis.com/abc');
+    $country = [];
+    fakeTse(overrides: [
+        TSE_BASE.'/dados/br/br-c0001-e006258-u.json' => function () use (&$country) {
+            return Http::response(tseResult($country['votes'], counted: $country['counted']));
+        },
+        'fcm.googleapis.com/*' => Http::response('', 201),
+    ]);
+    $votes = ['280002551544' => 520, '280002542548' => 480];
+
+    expect(syncCountry($country, $votes, '50'))->toBe(1);
 
     $this->travel(5)->minutes();
-    $changeCountry();
-    $this->artisan('tse:sincronizar')->assertSuccessful();
-    expect(PushMessage::query()->count())->toBe(0);
+    expect(syncCountry($country, $votes, '75'))->toBe(0);
 
     $this->travel(6)->minutes();
-    $changeCountry();
-    $this->artisan('tse:sincronizar')->assertSuccessful();
-    expect(PushMessage::query()->count())->toBe(1);
+    expect(syncCountry($country, $votes, '76'))->toBe(1);
 });
 
 test('nothing is sent for kinds of notification the follower turned off', function () {

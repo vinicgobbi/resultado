@@ -41,18 +41,24 @@ class ResultNotifier
         $subscriptionIds = [];
 
         foreach ($events as $event) {
-            $follows = $this->followers($event);
+            $election = Election::query()->where('tse_code', $event->electionCode)->first();
+            $result = Result::query()
+                ->forElection($event->electionCode, $event->office, $event->office->electedScope())
+                ->where('scope_code', $event->scopeCode)
+                ->first();
+
+            if ($election === null || $result === null) {
+                continue;
+            }
+
+            $updateKey = $event->category === NotificationCategory::Updates ? $this->updateKey($result) : null;
+            $follows = $this->followers($event, $updateKey);
 
             if ($follows === []) {
                 continue;
             }
 
-            $message = $this->message($event);
-
-            if ($message === null) {
-                continue;
-            }
-
+            $message = $this->message($event, $election, $result);
             $now = now();
 
             foreach (array_chunk($follows, self::INSERT_CHUNK) as $chunk) {
@@ -65,7 +71,7 @@ class ResultNotifier
                 if ($event->category === NotificationCategory::Updates) {
                     PushFollow::query()
                         ->whereKey(array_map(fn (PushFollow $follow): int => $follow->id, $chunk))
-                        ->update(['last_update_notified_at' => $now]);
+                        ->update(['last_update_notified_at' => $now, 'last_update_key' => $updateKey]);
                 }
             }
 
@@ -85,7 +91,7 @@ class ResultNotifier
         $place = new ResultPlace($follow->office, $follow->scope_code);
         $election = $place->latestElection();
         $kinds = array_keys(array_filter([
-            'as atualizações do TSE (no máximo a cada 10 minutos)' => $follow->notify_updates,
+            'as parciais do TSE quando a apuração avançar ou o líder mudar' => $follow->notify_updates,
             'quando estiver matematicamente definido' => $follow->notify_decided,
             'o resultado final' => $follow->notify_final,
         ]));
@@ -141,40 +147,48 @@ class ResultNotifier
 
     /**
      * Follows of the result that want this kind of notification; new results
-     * at most once every few minutes.
+     * only when they tell something new (see updateKey()), and at most once
+     * every few minutes.
      *
      * @return array<int, PushFollow>
      */
-    private function followers(SyncEvent $event): array
+    private function followers(SyncEvent $event, ?string $updateKey): array
     {
         return PushFollow::query()
             ->where('office', $event->office)
             ->where('scope_code', $event->scopeCode)
             ->where($event->category->column(), true)
-            ->when($event->category === NotificationCategory::Updates, fn (Builder $query) => $query->where(
-                fn (Builder $query) => $query
+            ->when($updateKey !== null, fn (Builder $query) => $query
+                ->where(fn (Builder $query) => $query
+                    ->whereNull('last_update_key')
+                    ->orWhere('last_update_key', '!=', $updateKey))
+                ->where(fn (Builder $query) => $query
                     ->whereNull('last_update_notified_at')
-                    ->orWhere('last_update_notified_at', '<=', now()->subMinutes(PushFollow::UPDATE_EVERY_MINUTES)),
-            ))
+                    ->orWhere('last_update_notified_at', '<=', now()->subMinutes(PushFollow::UPDATE_EVERY_MINUTES))))
             ->get()
             ->all();
     }
 
     /**
-     * @return array{title: string, body: string, url: string, tag: string}|null
+     * What a "new results" notification tells: the election, the step of the
+     * count reached and the leader. A follower hears again only when it
+     * changes, so a milestone held back by the interval is sent on the next
+     * sync after it.
      */
-    private function message(SyncEvent $event): ?array
+    private function updateKey(Result $result): string
     {
-        $election = Election::query()->where('tse_code', $event->electionCode)->first();
-        $result = Result::query()
-            ->forElection($event->electionCode, $event->office, $event->office->electedScope())
-            ->where('scope_code', $event->scopeCode)
-            ->first();
+        $milestone = collect(PushFollow::UPDATE_MILESTONES)
+            ->filter(fn (int $milestone): bool => $result->counted_percent >= $milestone)
+            ->last() ?? 0;
 
-        if ($election === null || $result === null) {
-            return null;
-        }
+        return "{$result->election_code}|{$milestone}|{$result->leading_candidate_id}";
+    }
 
+    /**
+     * @return array{title: string, body: string, url: string, tag: string}
+     */
+    private function message(SyncEvent $event, Election $election, Result $result): array
+    {
         $place = new ResultPlace($event->office, $event->scopeCode);
         $heading = $place->label();
         $counted = "{$this->percent($result->counted_percent)} apurado";

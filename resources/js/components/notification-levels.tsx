@@ -42,7 +42,7 @@ export const LEVELS: Level[] = [
         key: 'all',
         title: 'Tudo, em tempo real',
         short: 'Tudo',
-        help: 'Também cada nova parcial do TSE, no máximo a cada 10 minutos.',
+        help: 'Também as parciais do TSE a cada etapa da apuração (10%, 25%, 50%…) e quando o líder muda.',
         categories: {
             notify_updates: true,
             notify_decided: true,

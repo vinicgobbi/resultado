@@ -183,5 +183,6 @@ entenda como foi feita e possa refazê-la.
       de Fernando de Noronha, e agora só aparece em Pernambuco
 - [x] Cartões de candidato apertados no celular, com nomes longos quebrando
       em duas linhas (os votos descem para baixo do nome em cartões estreitos)
-- [ ] Avaliar se as notificações de atualização de municípios (no máximo a
-      cada 10 minutos) não são frequentes demais
+- [x] Notificações de parciais (antes no máximo a cada 10 minutos) só saem
+      quando a apuração passa de uma etapa (10%, 25%, 50%, 75%, 90%, 95%) ou
+      o líder muda, ainda com no mínimo 10 minutos entre elas

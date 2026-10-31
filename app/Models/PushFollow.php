@@ -21,16 +21,25 @@ use Illuminate\Support\Carbon;
  * @property bool $notify_decided
  * @property bool $notify_final
  * @property Carbon|null $last_update_notified_at
+ * @property string|null $last_update_key
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['push_subscription_id', 'office', 'scope_code', 'notify_updates', 'notify_decided', 'notify_final', 'last_update_notified_at'])]
+#[Fillable(['push_subscription_id', 'office', 'scope_code', 'notify_updates', 'notify_decided', 'notify_final', 'last_update_notified_at', 'last_update_key'])]
 class PushFollow extends Model
 {
     /**
      * At most one "new results" notification of a follow this often.
      */
     public const int UPDATE_EVERY_MINUTES = 10;
+
+    /**
+     * Steps of the count (percent counted) worth a "new results"
+     * notification; a change of leader is too.
+     *
+     * @var list<int>
+     */
+    public const array UPDATE_MILESTONES = [10, 25, 50, 75, 90, 95];
 
     /**
      * Get the attributes that should be cast.
